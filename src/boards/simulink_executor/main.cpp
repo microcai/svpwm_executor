@@ -17,6 +17,7 @@
 
 mtl::static_store<motorlib::at32pwmdriver> driver_store;
 
+static uint16_t ADC_Converted_Data_average[8] = { 0 };
 static __IO uint16_t ADC_Converted_Data[8] = { 0 };
 
 #define ADC_IDX_ISENSEA 0
@@ -107,6 +108,7 @@ void ADC_init()
 
 	adc_dma_mode_enable(ADC1, TRUE);
 
+	nvic_irq_enable(DMA1_Channel1_IRQn, 1, 1);
 	nvic_irq_enable(ADC1_IRQn, 0 , 0);
 }
 
@@ -192,7 +194,7 @@ mcucoro::awaitable<void> dc_mode_usb_reporter()
 		co_await leave_isr();
 		report_packet.time_stamp = millis();
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
-		report_packet.DC_current = ADC_Converted_Data[ADC_IDX_ISENSEA];
+		report_packet.DC_current = ADC_Converted_Data[ADC_IDX_ISENSEA] - ADC_Converted_Data_average[ADC_IDX_ISENSEA];
 
 		SerialUSB.write((const uint8_t*) &report_packet, sizeof(report_packet));
 	}
@@ -252,14 +254,18 @@ mcucoro::awaitable<void> svpwm_mode_usb_reporter()
 		co_await leave_isr();
 		report_packet.time_stamp = millis()/1000.0f;
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
-		report_packet.A_current = ADC_Converted_Data[ADC_IDX_ISENSEA];
-		report_packet.B_current = ADC_Converted_Data[ADC_IDX_ISENSEB];
+		report_packet.A_current = ADC_Converted_Data[ADC_IDX_ISENSEA] - ADC_Converted_Data_average[ADC_IDX_ISENSEA];
+		report_packet.B_current = ADC_Converted_Data[ADC_IDX_ISENSEB] - ADC_Converted_Data_average[ADC_IDX_ISENSEB];;
 		report_packet.C_current = 0 - report_packet.A_current - report_packet.B_current;
 		report_packet.hall_state = digitalRead(PC6) + (digitalRead(PC7) << 1) + (digitalRead(PC8) << 2);
 
 		SerialUSB.write((const uint8_t*) &report_packet, sizeof(report_packet));
 	}
 }
+
+static __IO uint32_t ADC_Converted_Data_sum[8] = { 0 };
+static __IO uint32_t ADC_Convert_count = 0;
+
 
 void setup()
 {
@@ -285,13 +291,19 @@ void setup()
 	// can_config();
 	ADC_init();
 
+	dma_interrupt_enable(DMA1_CHANNEL1, DMA_FDT_INT, TRUE);
+
 	auto pwm_driver = new (driver_store.address())  motorlib::at32pwmdriver(1);
 
-
 	// 电流采样找 0.
-	adc_interrupt_enable(ADC1, ADC_CCE_INT, TRUE);
-	delay(200);
-	adc_interrupt_enable(ADC1, ADC_CCE_INT, FALSE);
+	delay(150);
+	dma_interrupt_enable(DMA1_CHANNEL1, DMA_FDT_INT, FALSE);
+	delay(1);
+
+	for (int i=0; i < sizeof(ADC_Converted_Data)/sizeof(ADC_Converted_Data[0]) ; i++)
+	{
+		ADC_Converted_Data_average[i] = ADC_Converted_Data_sum[i]/(ADC_Convert_count - 5000);
+	}
 
 	//
 
@@ -335,11 +347,23 @@ void loop()
 	mcucoro::executor::system_executor().poll();
 }
 
-extern "C" void ADC1_IRQHandler()
+extern "C" void DMA1_Channel1_IRQHandler(void)
 {
-    adc_flag_clear(ADC1, ADC_CCE_FLAG);
+	if(dma_interrupt_flag_get(DMA1_FDT1_FLAG) != RESET)
+	{
+		dma_flag_clear(DMA1_FDT1_FLAG);
 
-	// TODO 计算 电流采样 0 点.
+		if (ADC_Convert_count >=5000)
+		{
+			// 累加 ADC 结果.
+			for (int i=0; i < sizeof(ADC_Converted_Data)/sizeof(ADC_Converted_Data[0]) ; i++)
+			{
+				ADC_Converted_Data_sum[i] += ADC_Converted_Data[i];
+			}
+		}
+
+		++ADC_Convert_count;
+	}
 }
 
 extern "C" void TMR6_GLOBAL_IRQHandler(void)
