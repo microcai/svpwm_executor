@@ -217,11 +217,12 @@ mcucoro::awaitable<void> svpwm_mode_usb_commander(motorlib::pwmdriver* pwm_drive
 
 		// read data from USB cdc
 		auto len = SerialUSB.readBytes(input_buffer, 64);
-		if (len == 4)
+		if (len == 8)
 		{
 			const svpwm_mode_command_packet* cmd_pkt = reinterpret_cast<const svpwm_mode_command_packet*>(input_buffer);
-			if (cmd_pkt->header == 0x9D33)
+			if (cmd_pkt->header == 'SS')
 			{
+				togglePin(LED2_PIN);
 				pwm_driver->set_duty(float_number{cmd_pkt->dutyA}/32767, float_number{cmd_pkt->dutyB}/32767, float_number{cmd_pkt->dutyC}/32767);
 			}
 		}
@@ -233,9 +234,9 @@ mcucoro::awaitable<void> svpwm_mode_usb_reporter()
 
 	struct svpwm_mode_report_packet
 	{
-		uint16_t header; // header must be 0x9D33
-		uint16_t hall_state;
+		uint32_t header; // header must be 'SSSS'
 		float time_stamp;
+		float hall_state;
 		float BUS_Voltage;
 		float A_current;
 		float B_current;
@@ -243,10 +244,10 @@ mcucoro::awaitable<void> svpwm_mode_usb_reporter()
 		uint32_t tail;
 	};
 
-	svpwm_mode_report_packet report_packet = {0x9D33};
-	report_packet.tail = 0x7f800000;
+	svpwm_mode_report_packet report_packet = {0x53535353};
+	report_packet.tail = 0x45454545;
 
-	interval_setup(2000);
+	interval_setup(800);
 
 	for(;;)
 	{
