@@ -200,6 +200,7 @@ mcucoro::awaitable<void> dc_mode_usb_reporter()
 	}
 }
 
+
 mcucoro::awaitable<void> svpwm_mode_usb_commander(motorlib::pwmdriver* pwm_driver)
 {
 	struct svpwm_mode_command_packet{
@@ -294,7 +295,7 @@ void setup()
 
 	dma_interrupt_enable(DMA1_CHANNEL1, DMA_FDT_INT, TRUE);
 
-	auto pwm_driver = new (driver_store.address())  motorlib::at32pwmdriver(1);
+	auto pwm_driver = new (driver_store.address())  motorlib::at32pwmdriver();
 
 	// 电流采样找 0.
 	delay(150);
@@ -483,6 +484,86 @@ void system_clock_config(void)
   /* reduce power comsumption */
   reduce_power_consumption();
 #endif
+}
+
+
+bool at32_board_specific_tmr_gpio_setup()
+{
+	gpio_init_type gpio_init_struct;
+	crm_periph_clock_enable(CRM_GPIOA_PERIPH_CLOCK, TRUE);
+	crm_periph_clock_enable(CRM_GPIOB_PERIPH_CLOCK, TRUE);
+	crm_periph_clock_enable(CRM_GPIOC_PERIPH_CLOCK, TRUE);
+
+	gpio_default_para_init(&gpio_init_struct);
+
+	/* add user code begin tmr1_init 1 */
+
+	/* add user code end tmr1_init 1 */
+
+	/* configure the tmr1 CH1 pin */
+	gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE8, GPIO_MUX_1);
+	gpio_init_struct.gpio_pins = GPIO_PINS_8;
+	gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
+	gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
+	gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
+	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
+	gpio_init(GPIOA, &gpio_init_struct);
+
+	/* configure the tmr1 CH1C pin */
+	gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE7, GPIO_MUX_1);
+	gpio_init_struct.gpio_pins = GPIO_PINS_7;
+	gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
+	gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
+	gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
+	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
+	gpio_init(GPIOA, &gpio_init_struct);
+
+	/* configure the tmr1 CH2 pin */
+	gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE9, GPIO_MUX_1);
+	gpio_init_struct.gpio_pins = GPIO_PINS_9;
+	gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
+	gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
+	gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
+	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
+	gpio_init(GPIOA, &gpio_init_struct);
+
+	/* configure the tmr1 CH2C pin */
+	gpio_pin_mux_config(GPIOB, GPIO_PINS_SOURCE0, GPIO_MUX_1);
+	gpio_init_struct.gpio_pins = GPIO_PINS_0;
+	gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
+	gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
+	gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
+	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
+	gpio_init(GPIOB, &gpio_init_struct);
+
+	/* configure the tmr1 CH3 pin */
+	gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE10, GPIO_MUX_1);
+	gpio_init_struct.gpio_pins = GPIO_PINS_10;
+	gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
+	gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
+	gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
+	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
+	gpio_init(GPIOA, &gpio_init_struct);
+
+	/* configure the tmr1 CH3C pin */
+	gpio_pin_mux_config(GPIOB, GPIO_PINS_SOURCE1, GPIO_MUX_1);
+	gpio_init_struct.gpio_pins = GPIO_PINS_1;
+	gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
+	gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
+	gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
+	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
+	gpio_init(GPIOB, &gpio_init_struct);
+
+	/* configure the tmr1 BRK pin */
+	gpio_pin_mux_config(GPIOB, GPIO_PINS_SOURCE12, GPIO_MUX_1);
+	gpio_init_struct.gpio_pins = GPIO_PINS_12;
+	gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
+	gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
+	gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
+	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
+	gpio_init(GPIOB, &gpio_init_struct);
+
+	return true;
 }
 
 #endif

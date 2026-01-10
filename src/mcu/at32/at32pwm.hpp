@@ -10,7 +10,7 @@ struct at32pwmdriver_impl;
 class at32pwmdriver : public pwmdriver
 {
 public:
-    at32pwmdriver(int tmr_index);
+    at32pwmdriver();
     ~at32pwmdriver();
 
 public:
