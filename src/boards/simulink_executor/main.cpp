@@ -1,4 +1,5 @@
 
+#include "at32f402_405_tmr.h"
 #if defined (BOARD_SIMULINK_BOARD)
 
 #include <Arduino.h>
@@ -185,6 +186,8 @@ void dc_mode_usb_commander(motorlib::pwmdriver* pwm_driver)
 	}
 }
 
+float __IO encoder_speed;
+
 void dc_mode_usb_reporter()
 {
 	corothread::context_yield();
@@ -198,6 +201,7 @@ void dc_mode_usb_reporter()
 		float BUS_Voltage;
 		float time_stamp;
 		float EncoderPos;
+		float encoder_speed;
 		uint32_t tail;
 	};
 
@@ -211,6 +215,7 @@ void dc_mode_usb_reporter()
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
 		report_packet.DC_current = ADC_Converted_Data[ADC_IDX_ISENSEA] - ADC_Converted_Data_average[ADC_IDX_ISENSEA];
 		report_packet.EncoderPos = tmr_counter_value_get(TMR3)/10000.0 * 360.0;
+		report_packet.encoder_speed = encoder_speed;
 
 		SerialUSB.write((const uint8_t*) &report_packet, sizeof(report_packet));
 	}
@@ -229,6 +234,7 @@ void vfd_mode_usb_reporter(VVVF* vvvf)
 		float C_current;
 		float EncoderPos;
 		float current_angle_of_output;
+		float encoder_speed;
 		uint32_t tail;
 	};
 
@@ -251,6 +257,7 @@ void vfd_mode_usb_reporter(VVVF* vvvf)
 		report_packet.C_current = ADC_Converted_Data[ADC_IDX_ISENSEC] - centor;//ADC_Converted_Data_average[ADC_IDX_ISENSEC_REF];
 		report_packet.current_angle_of_output = vvvf->cur_angle;
 		report_packet.EncoderPos = tmr_counter_value_get(TMR3)/10000.0 * 360.0;
+		report_packet.encoder_speed = encoder_speed;
 
 		SerialUSB.write((const uint8_t*) &report_packet, sizeof(report_packet));
 	}
@@ -483,6 +490,36 @@ extern "C" void DMA1_Channel1_IRQHandler(void)
 	}
 }
 
+template<int full_angle>
+int angle_diff(int cur_angle, int pre_angle)
+{
+	auto guess1 = cur_angle - pre_angle;
+	auto guess2 = cur_angle + full_angle - pre_angle;
+
+	int diff1, diff2;
+	bool cur_bigger = cur_angle >= pre_angle;
+	diff1 = cur_angle - pre_angle;
+	diff2 = pre_angle - cur_angle;
+
+	if (cur_bigger)
+	{
+		if (diff1 > (full_angle/2))
+		{
+			return diff1 - full_angle;
+		}
+		return diff1;
+	}
+	else
+	{
+		if (diff2 > (full_angle/2))
+		{
+			return full_angle - diff2;
+		}
+		return diff1;
+	}
+}
+
+
 extern "C" void TMR6_GLOBAL_IRQHandler(void)
 {
   /* overflow interrupt management */
@@ -492,6 +529,16 @@ extern "C" void TMR6_GLOBAL_IRQHandler(void)
     /* clear flag */
     tmr_flag_clear(TMR6, TMR_OVF_FLAG);
     /* add user code end TMR6_TMR_OVF_FLAG */
+
+	// caculate RPM by using TMR3
+	static int pre_value = 0;
+	int value = tmr_counter_value_get(TMR3);
+
+	// 首先判定旋转方向.
+	int delta_angle = angle_diff<10000>(value, pre_value);
+	encoder_speed = delta_angle / 10.0 * 60;
+
+	pre_value = value;
 
 	one_ms_interval.notify();
   }
