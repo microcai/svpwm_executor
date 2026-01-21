@@ -194,12 +194,15 @@ void dc_mode_usb_reporter()
 	struct dc_mode_report_packet
 	{
 		uint32_t header; // header must be 0xDCDC
-		uint32_t DC_current;
-		uint32_t BUS_Voltage;
-		uint32_t time_stamp;
+		float DC_current;
+		float BUS_Voltage;
+		float time_stamp;
+		float EncoderPos;
+		uint32_t tail;
 	};
 
 	dc_mode_report_packet report_packet = {'DCDC', 0, 0, 0};
+	report_packet.tail = 0x7F800000;
 
 	for(;;)
 	{
@@ -207,6 +210,7 @@ void dc_mode_usb_reporter()
 		report_packet.time_stamp = millis();
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
 		report_packet.DC_current = ADC_Converted_Data[ADC_IDX_ISENSEA] - ADC_Converted_Data_average[ADC_IDX_ISENSEA];
+		report_packet.EncoderPos = tmr_counter_value_get(TMR3)/10000.0 * 360.0;
 
 		SerialUSB.write((const uint8_t*) &report_packet, sizeof(report_packet));
 	}
@@ -223,6 +227,7 @@ void vfd_mode_usb_reporter(VVVF* vvvf)
 		float A_current;
 		float B_current;
 		float C_current;
+		float EncoderPos;
 		float current_angle_of_output;
 		uint32_t tail;
 	};
@@ -245,6 +250,7 @@ void vfd_mode_usb_reporter(VVVF* vvvf)
 		report_packet.B_current = ADC_Converted_Data[ADC_IDX_ISENSEB] - centor;//ADC_Converted_Data_average[ADC_IDX_ISENSEB_REF];
 		report_packet.C_current = ADC_Converted_Data[ADC_IDX_ISENSEC] - centor;//ADC_Converted_Data_average[ADC_IDX_ISENSEC_REF];
 		report_packet.current_angle_of_output = vvvf->cur_angle;
+		report_packet.EncoderPos = tmr_counter_value_get(TMR3)/10000.0 * 360.0;
 
 		SerialUSB.write((const uint8_t*) &report_packet, sizeof(report_packet));
 	}
@@ -363,14 +369,33 @@ static __IO uint32_t ADC_Convert_count = 0;
 static corothread::thread_context reporter_thread_ctx;
 static corothread::thread_context commander_thread_ctx;
 
+void encoder_tmr3_init(void);
+
+extern "C" void EXINT9_5_IRQHandler()
+{
+	if(exint_interrupt_flag_get(EXINT_LINE_8) != RESET)
+	{
+		tmr_counter_value_set(TMR3, 0);
+	}
+
+	exint_flag_clear(EXINT_LINE_5|EXINT_LINE_6|EXINT_LINE_7|EXINT_LINE_8|EXINT_LINE_9);
+}
+
 void setup()
 {
 	// Serial.begin(UART_BAUD_RATE);
-	scfg_sram_operr_lock_enable(TRUE);
-	crm_clock_source_enable(CRM_CLOCK_SOURCE_HEXT, FALSE);
 	crm_periph_clock_enable(CRM_GPIOD_PERIPH_CLOCK, TRUE);
+	crm_periph_clock_enable(CRM_GPIOC_PERIPH_CLOCK, TRUE);
+	crm_periph_clock_enable(CRM_SCFG_PERIPH_CLOCK, TRUE);
 
+	scfg_exint_line_config(SCFG_PORT_SOURCE_GPIOC, SCFG_PINS_SOURCE8);
 
+	exint_init_type exint_init_struct;
+
+	exint_init_struct.line_enable = TRUE;
+	exint_init_struct.line_mode = EXINT_LINE_INTERRUPT;
+	exint_init_struct.line_select = EXINT_LINE_8;
+	exint_init_struct.line_polarity = EXINT_TRIGGER_RISING_EDGE;
 
 	pinMode(LED1_PIN, OUTPUT_OPEN_DRAIN);
 	pinMode(LED2_PIN, OUTPUT_OPEN_DRAIN);
@@ -379,7 +404,6 @@ void setup()
 	digitalWrite_HIGH(LED1_PIN);
 	digitalWrite_HIGH(LED2_PIN);
 	digitalWrite_HIGH(LED3_PIN);
-
 
 	// can_config();
 	ADC_init();
@@ -406,12 +430,20 @@ void setup()
 	led_status_1(LED1_PIN);
 
 	#if BOARD_MODE == 1
+		encoder_tmr3_init();
+		pinMode(PC8, INPUT);
+		exint_init(&exint_init_struct);
+		nvic_irq_enable(EXINT9_5_IRQn, 0, 1);
 		VVVF * vvvf = new VVVF(pwm_driver);
 		corothread::create_static_context(&reporter_thread_ctx, callable(&vfd_mode_usb_reporter, vvvf));
 		corothread::create_static_context(&commander_thread_ctx, callable(&vfd_mode_usb_commander, vvvf));
 	#elif BOARD_MODE == 0
+		encoder_tmr3_init();
+		pinMode(PC8, INPUT);
+		exint_init(&exint_init_struct);
 		//VVVF 直流电机模式
 		// 打开 直流模式回报和执行代码
+		nvic_irq_enable(EXINT9_5_IRQn, 0, 1);
 		corothread::create_static_context(&reporter_thread_ctx, callable(&dc_mode_usb_reporter));
 		corothread::create_static_context(&commander_thread_ctx, callable(&dc_mode_usb_commander, pwm_driver));
 
