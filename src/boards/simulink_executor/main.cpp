@@ -4,9 +4,12 @@
 #include <Arduino.h>
 #include <USBSerial.h>
 
-#include "coroutine.hpp"
-#include "mcu_coro.hpp"
-#include "coro_condvar.hpp"
+#include "dros/mcu_coro.hpp"
+#include "dros/coro_condvar.hpp"
+#include "dros/delay.hpp"
+#include "dros/corothread.hpp"
+#include "dros/thread_condvar.hpp"
+
 #include "pins.hpp"
 
 #include "led_status.hpp"
@@ -120,7 +123,7 @@ void ADC_init()
 	nvic_irq_enable(ADC1_IRQn, 0 , 0);
 }
 
-mcucoro::condition_variable one_ms_interval;
+corothread::condition_variable one_ms_interval;
 
 void interval_setup(int freq)
 {
@@ -140,7 +143,7 @@ void interval_setup(int freq)
 	tmr_interrupt_enable(TMR6, TMR_OVF_INT, TRUE);
 }
 
-mcucoro::awaitable<void> dc_mode_usb_commander(motorlib::pwmdriver* pwm_driver)
+void dc_mode_usb_commander(motorlib::pwmdriver* pwm_driver)
 {
 	struct dc_mode_command_packet{
 		uint32_t header; // header must be 'DCDC'
@@ -149,7 +152,7 @@ mcucoro::awaitable<void> dc_mode_usb_commander(motorlib::pwmdriver* pwm_driver)
 
 	for(;;)
 	{
-		co_await coro_delay_ms(0);
+		corothread::context_yield();
 
 		char input_buffer[64];
 
@@ -182,8 +185,10 @@ mcucoro::awaitable<void> dc_mode_usb_commander(motorlib::pwmdriver* pwm_driver)
 	}
 }
 
-mcucoro::awaitable<void> dc_mode_usb_reporter()
+void dc_mode_usb_reporter()
 {
+	corothread::context_yield();
+
 	interval_setup(1000);
 
 	struct dc_mode_report_packet
@@ -198,8 +203,7 @@ mcucoro::awaitable<void> dc_mode_usb_reporter()
 
 	for(;;)
 	{
-		co_await one_ms_interval.wait();
-		co_await leave_isr();
+		one_ms_interval.wait();
 		report_packet.time_stamp = millis();
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
 		report_packet.DC_current = ADC_Converted_Data[ADC_IDX_ISENSEA] - ADC_Converted_Data_average[ADC_IDX_ISENSEA];
@@ -209,7 +213,7 @@ mcucoro::awaitable<void> dc_mode_usb_reporter()
 }
 
 
-mcucoro::awaitable<void> vfd_mode_usb_reporter(VVVF* vvvf)
+void vfd_mode_usb_reporter(VVVF* vvvf)
 {
 
 	struct vfd_mode_report_packet
@@ -231,8 +235,8 @@ mcucoro::awaitable<void> vfd_mode_usb_reporter(VVVF* vvvf)
 
 	for(;;)
 	{
-		co_await one_ms_interval.wait();
-		co_await leave_isr();
+		one_ms_interval.wait();
+
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
 		float centor = ADC_Converted_Data[ADC_IDX_ISENSEA] + ADC_Converted_Data[ADC_IDX_ISENSEB] + ADC_Converted_Data[ADC_IDX_ISENSEC];
 		centor /=3;
@@ -246,7 +250,7 @@ mcucoro::awaitable<void> vfd_mode_usb_reporter(VVVF* vvvf)
 	}
 }
 
-mcucoro::awaitable<void> vfd_mode_usb_commander(VVVF* vvvf)
+void vfd_mode_usb_commander(VVVF* vvvf)
 {
 	struct vfd_mode_command_packet{
 		uint32_t header; // header must be 'VVVF'
@@ -255,7 +259,8 @@ mcucoro::awaitable<void> vfd_mode_usb_commander(VVVF* vvvf)
 	};
 	for(;;)
 	{
-		co_await coro_delay_ms(0);
+		corothread::context_yield();
+
 		char input_buffer[64];
 
 		// read data from USB cdc
@@ -289,7 +294,7 @@ mcucoro::awaitable<void> vfd_mode_usb_commander(VVVF* vvvf)
 	}
 }
 
-mcucoro::awaitable<void> svpwm_mode_usb_commander(motorlib::pwmdriver* pwm_driver)
+void svpwm_mode_usb_commander(motorlib::pwmdriver* pwm_driver)
 {
 	struct svpwm_mode_command_packet{
 		uint32_t header; // header must be 'BLDC'
@@ -300,7 +305,7 @@ mcucoro::awaitable<void> svpwm_mode_usb_commander(motorlib::pwmdriver* pwm_drive
 
 	for(;;)
 	{
-		co_await coro_delay_ms(0);
+		corothread::context_yield();
 
 		char input_buffer[64];
 
@@ -318,7 +323,7 @@ mcucoro::awaitable<void> svpwm_mode_usb_commander(motorlib::pwmdriver* pwm_drive
 	}
 }
 
-mcucoro::awaitable<void> svpwm_mode_usb_reporter()
+void svpwm_mode_usb_reporter()
 {
 
 	struct svpwm_mode_report_packet
@@ -340,8 +345,7 @@ mcucoro::awaitable<void> svpwm_mode_usb_reporter()
 
 	for(;;)
 	{
-		co_await one_ms_interval.wait();
-		co_await leave_isr();
+		one_ms_interval.wait();
 		report_packet.time_stamp = millis()/1000.0f;
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
 		report_packet.A_current = ADC_Converted_Data[ADC_IDX_ISENSEA] - ADC_Converted_Data_average[ADC_IDX_ISENSEA_REF];
@@ -356,12 +360,17 @@ mcucoro::awaitable<void> svpwm_mode_usb_reporter()
 static __IO uint32_t ADC_Converted_Data_sum[8] = { 0 };
 static __IO uint32_t ADC_Convert_count = 0;
 
+static corothread::thread_context reporter_thread_ctx;
+static corothread::thread_context commander_thread_ctx;
 
 void setup()
 {
 	// Serial.begin(UART_BAUD_RATE);
+	scfg_sram_operr_lock_enable(TRUE);
 	crm_clock_source_enable(CRM_CLOCK_SOURCE_HEXT, FALSE);
 	crm_periph_clock_enable(CRM_GPIOD_PERIPH_CLOCK, TRUE);
+
+
 
 	pinMode(LED1_PIN, OUTPUT_OPEN_DRAIN);
 	pinMode(LED2_PIN, OUTPUT_OPEN_DRAIN);
@@ -397,33 +406,21 @@ void setup()
 	led_status_1(LED1_PIN);
 
 	#if BOARD_MODE == 1
-	VVVF * vvvf = new VVVF(pwm_driver);
+		VVVF * vvvf = new VVVF(pwm_driver);
+		corothread::create_static_context(&reporter_thread_ctx, callable(&vfd_mode_usb_reporter, vvvf));
+		corothread::create_static_context(&commander_thread_ctx, callable(&vfd_mode_usb_commander, vvvf));
+	#elif BOARD_MODE == 0
+		//VVVF 直流电机模式
+		// 打开 直流模式回报和执行代码
+		corothread::create_static_context(&reporter_thread_ctx, callable(&dc_mode_usb_reporter));
+		corothread::create_static_context(&commander_thread_ctx, callable(&dc_mode_usb_commander, pwm_driver));
+
+	#elif BOARD_MODE == 2
+		corothread::create_static_context(&reporter_thread_ctx, callable(&svpwm_mode_usb_reporter));
+		corothread::create_static_context(&commander_thread_ctx, callable(&svpwm_mode_usb_commander, pwm_driver));
 	#endif
 
-
-	switch (BOARD_MODE)
-	{
-		case 0:  // DC mode
-			//VVVF 直流电机模式
-			// 打开 直流模式回报和执行代码
-			dc_mode_usb_reporter();
-			dc_mode_usb_commander(pwm_driver);
-			break;
-
-		case 1: // VFD mode
-			vfd_mode_usb_reporter(vvvf);
-			vfd_mode_usb_commander(vvvf);
-			break;
-
-		case 2: // SVPWM 模式
-			svpwm_mode_usb_reporter();
-			svpwm_mode_usb_commander(pwm_driver);
-			break;
-	}
-
-	int oled_delay_ms = 100;
-
-	wdt_enable();
+	// wdt_enable();
 
 	// app->switch_mode(op_mode::mode_BLDC);
 	adc_ordinary_software_trigger_enable(ADC1, TRUE);
@@ -653,4 +650,10 @@ bool at32_board_specific_tmr_gpio_setup()
 	return true;
 }
 
+void usb_delay_ms(uint32_t ms)
+{
+	corothread::thread_delay(ms);
+}
+
 #endif
+

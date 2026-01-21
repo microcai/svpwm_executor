@@ -1,0 +1,9 @@
+{
+    "$schema": "https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/schema/library.json",
+    "name": "drOS",
+    "version": "1.0.0",
+    "build": {
+        "srcDir": ".",
+        "includeDir": "include"
+    }
+  }

@@ -33,22 +33,45 @@ struct callable
         o.m_data = nullptr;
     }
 
+    operator bool() const
+    {
+        return m_function != nullptr;
+    }
+
+    callable& operator = (callable&& o)
+    {
+        this->~callable();
+        m_function = o.m_function;
+        m_data = o.m_data;
+        o.m_data = nullptr;
+        o.m_function = nullptr;
+        return *this;
+    }
+
     callable()
         : m_function(nullptr)
         , m_data(nullptr)
     {}
-
-    callable(void (*raw_function)(const  void* data), const void* data)
-        : m_function(raw_function)
-        , m_data(data)
-    {
-    }
 
     callable(void (*raw_function)())
         : m_function( reinterpret_cast< decltype(m_function)>(raw_function))
         , m_data(nullptr)
     {
     }
+
+    callable(void (*raw_function)(const void* data), const void* data)
+        : m_function(reinterpret_cast<decltype(m_function)>(raw_function))
+        , m_data(data)
+    {
+    }
+    
+    template<typename UserArgType, typename UserArgType2> requires std::convertible_to<UserArgType2*, UserArgType*>
+    callable(void (*raw_function)(UserArgType* data), UserArgType2* data)
+        : m_function(reinterpret_cast<decltype(m_function)>(raw_function))
+        , m_data(data)
+    {
+    }
+
 
     callable(std::coroutine_handle<> coro_handle)
     {
