@@ -144,6 +144,8 @@ void interval_setup(int freq)
 	tmr_interrupt_enable(TMR6, TMR_OVF_INT, TRUE);
 }
 
+int __IO command_last_received;
+
 void dc_mode_usb_commander(motorlib::pwmdriver* pwm_driver)
 {
 	struct dc_mode_command_packet{
@@ -164,6 +166,7 @@ void dc_mode_usb_commander(motorlib::pwmdriver* pwm_driver)
 			auto cmd_pkt = reinterpret_cast<dc_mode_command_packet*>(input_buffer);
 			if (cmd_pkt->header == 0x44434443)
 			{
+				command_last_received = 0;
 				auto duty = cmd_pkt->duty;
 
 				// set duty to hardware!
@@ -173,33 +176,37 @@ void dc_mode_usb_commander(motorlib::pwmdriver* pwm_driver)
 				}
 				else if (duty > 0)
 				{
-					pwm_driver->set_duty(std::min(duty, 1.0f), -1, 0);
+					pwm_driver->set_duty(0, -1, std::min(duty, 1.0f));
 				}
 				else
 				{
-					pwm_driver->set_duty(0, -1, std::min(-duty, 1.0f));
+					pwm_driver->set_duty(std::min(-duty, 1.0f), -1, 0);
 				}
 			}
 
 		}
 
+		if (command_last_received > 1000)
+		{
+			pwm_driver->set_duty(-1, -1, -1);
+		}
 	}
 }
 
 float __IO encoder_speed;
 
+
 void dc_mode_usb_reporter()
 {
 	corothread::context_yield();
 
-	interval_setup(1000);
+	interval_setup(500);
 
 	struct dc_mode_report_packet
 	{
 		uint32_t header; // header must be 0xDCDC
 		float DC_current;
 		float BUS_Voltage;
-		float time_stamp;
 		float EncoderPos;
 		float encoder_speed;
 		uint32_t tail;
@@ -211,7 +218,7 @@ void dc_mode_usb_reporter()
 	for(;;)
 	{
 		one_ms_interval.wait();
-		report_packet.time_stamp = millis();
+		command_last_received ++;
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
 		report_packet.DC_current = ADC_Converted_Data[ADC_IDX_ISENSEA] - ADC_Converted_Data_average[ADC_IDX_ISENSEA];
 		report_packet.EncoderPos = tmr_counter_value_get(TMR3)/10000.0 * 360.0;
@@ -539,7 +546,7 @@ extern "C" void TMR6_GLOBAL_IRQHandler(void)
 
 	// 首先判定旋转方向.
 	int delta_angle = angle_diff<10000>(value, pre_value);
-	encoder_speed = delta_angle / 10.0 * 60;
+	encoder_speed = delta_angle / 10000.0 * 60 * 500;
 
 	pre_value = value;
 
