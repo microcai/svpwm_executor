@@ -163,16 +163,12 @@ struct at32pwmdriver_impl
 		tmr_cnt_dir_set(tmr, TMR_COUNT_TWO_WAY_1);
 		tmr_period_value_set(tmr, timer_period - 1);
 		tmr_output_channel_config(tmr, TMR_SELECT_CHANNEL_1, &tmr_output_struct_normal);
-#ifndef PWM_B_BROKEN
 		tmr_output_channel_config(tmr, TMR_SELECT_CHANNEL_2, &tmr_output_struct_normal);
-#endif
 		tmr_output_channel_config(tmr, TMR_SELECT_CHANNEL_3, &tmr_output_struct_normal);
 		tmr_output_channel_config(tmr, TMR_SELECT_CHANNEL_4, &tmr_output_struct_normal);
 
 		tmr_channel_enable(tmr, TMR_SELECT_CHANNEL_1, TRUE);
-#ifndef PWM_B_BROKEN
 		tmr_channel_enable(tmr, TMR_SELECT_CHANNEL_2, TRUE);
-#endif
 		tmr_channel_enable(tmr, TMR_SELECT_CHANNEL_3, TRUE);
 		tmr_channel_enable(tmr, TMR_SELECT_CHANNEL_4, TRUE);
 
@@ -426,6 +422,9 @@ struct at32pwmdriver_impl
 
 	void set_duty(float U_a, float U_b, float U_c)
 	{
+#ifdef PWM_B_BROKEN
+		U_b = -1;
+#endif
 		uint32_t channel1_pulse = static_cast<int>(U_a * timer_period);
 		uint32_t channel2_pulse = static_cast<int>(U_b * timer_period);
 		uint32_t channel3_pulse = static_cast<int>(U_c * timer_period);
@@ -448,7 +447,6 @@ struct at32pwmdriver_impl
 			tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, channel1_pulse);
 		}
 
-		#ifndef PWM_B_BROKEN
 
 		if (U_b < 0)
 		{
@@ -467,8 +465,6 @@ struct at32pwmdriver_impl
 			}
 			tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, channel2_pulse);
 		}
-
-		#endif
 
 		if (U_c < 0)
 		{

@@ -407,6 +407,8 @@ void setup()
 	pinMode(LED1_PIN, OUTPUT_OPEN_DRAIN);
 	pinMode(LED2_PIN, OUTPUT_OPEN_DRAIN);
 	pinMode(LED3_PIN, OUTPUT_OPEN_DRAIN);
+	pinMode(GATE_EN_PIN, OUTPUT);
+	digitalWrite_LOW(GATE_EN_PIN);
 
 	digitalWrite_HIGH(LED1_PIN);
 	digitalWrite_HIGH(LED2_PIN);
@@ -418,6 +420,8 @@ void setup()
 	dma_interrupt_enable(DMA1_CHANNEL1, DMA_FDT_INT, TRUE);
 
 	auto pwm_driver = new (driver_store.address())  motorlib::at32pwmdriver();
+
+	pwm_driver->start();
 
 	// 电流采样找 0.
 	delay(150);
@@ -431,7 +435,6 @@ void setup()
 	// init USB CDC
 	SerialUSB.begin();
 
-	pinMode(GATE_EN_PIN, OUTPUT);
 	digitalWrite_HIGH(GATE_EN_PIN);
 
 	led_status_1(LED1_PIN);
@@ -680,7 +683,6 @@ bool at32_board_specific_tmr_gpio_setup()
 	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
 	gpio_init(GPIOA, &gpio_init_struct);
 
-#ifndef PWM_B_BROKEN
 	/* configure the tmr1 CH2 pin */
 	gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE9, GPIO_MUX_1);
 	gpio_init_struct.gpio_pins = GPIO_PINS_9;
@@ -698,7 +700,7 @@ bool at32_board_specific_tmr_gpio_setup()
 	gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
 	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
 	gpio_init(GPIOB, &gpio_init_struct);
-#endif
+
 	/* configure the tmr1 CH3 pin */
 	gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE10, GPIO_MUX_1);
 	gpio_init_struct.gpio_pins = GPIO_PINS_10;
