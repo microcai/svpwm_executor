@@ -162,7 +162,7 @@ void dc_mode_usb_commander(motorlib::pwmdriver* pwm_driver)
 		if (len == 8)
 		{
 			auto cmd_pkt = reinterpret_cast<dc_mode_command_packet*>(input_buffer);
-			if (cmd_pkt->header = 'DCDC')
+			if (cmd_pkt->header == 0x44434443)
 			{
 				auto duty = cmd_pkt->duty;
 
@@ -173,11 +173,11 @@ void dc_mode_usb_commander(motorlib::pwmdriver* pwm_driver)
 				}
 				else if (duty > 0)
 				{
-					pwm_driver->set_duty(duty, 0, -1);
+					pwm_driver->set_duty(std::min(duty, 1.0f), -1, 0);
 				}
 				else
 				{
-					pwm_driver->set_duty(0, duty, -1);
+					pwm_driver->set_duty(0, -1, std::min(-duty, 1.0f));
 				}
 			}
 
