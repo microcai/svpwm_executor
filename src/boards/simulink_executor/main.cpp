@@ -24,6 +24,7 @@
 
 #include "tmr2_eclipsed_timer.h"
 
+#include "SEGGER_RTT.h"
 
 template<typename T=float>
 T clamp(T v, T min, T max)
@@ -332,8 +333,52 @@ void vfd_mode_usb_commander(VVVF* vvvf)
 	}
 }
 
+void hall_study(BLDC* bldc)
+{
+	bldc->direct_control_mode = true;
+
+	int pre_hall_state = -1;
+
+	for (int i = 10; i < 360 ; i+=15)
+	{
+		corothread::thread_delay(20);
+		bldc->set_foc(i, 0.1);
+		corothread::thread_delay(10);
+		char buf[64];
+		int len = snprintf(buf, 64, "angle %d, hall = %d", i, tmr3_hall.hall_state );
+		if (pre_hall_state != tmr3_hall.hall_state)
+		{
+	  		SEGGER_RTT_Write(0, buf, len);
+			pre_hall_state = tmr3_hall.hall_state;
+			tmr3_hall.update_sector_hall_map(tmr3_hall.hall_state,  i / 60);
+		}
+	}
+
+	for (int i = 10; i < 360 ; i+=15)
+	{
+		corothread::thread_delay(20);
+		bldc->set_foc(i, 0.1);
+		corothread::thread_delay(10);
+		char buf[64];
+		int len = snprintf(buf, 64, "angle %d, hall = %d", i, tmr3_hall.hall_state );
+		if (pre_hall_state != tmr3_hall.hall_state)
+		{
+	  		SEGGER_RTT_Write(0, buf, len);
+			pre_hall_state = tmr3_hall.hall_state;
+			tmr3_hall.update_sector_hall_map(tmr3_hall.hall_state,  i / 60);
+		}
+	}
+
+	bldc->set_duty(0);
+	corothread::thread_delay(200);
+	bldc->set_duty(0.1);
+	return;
+}
+
 void svpwm_mode_usb_commander(BLDC* bldc)
 {
+	corothread::thread_delay(200);
+
 	struct svpwm_mode_command_packet{
 		uint32_t header; // header must be 'BLDC'
 		float dutyA;
@@ -454,6 +499,8 @@ extern "C" void EXINT9_5_IRQHandler()
 
 void setup()
 {
+	SEGGER_RTT_ConfigUpBuffer(0, NULL, NULL, 0, SEGGER_RTT_MODE_NO_BLOCK_TRIM);
+  	SEGGER_RTT_WriteString(0, "SEGGER Real-Time-Terminal Started\r\n\r\n");
 	// Serial.begin(UART_BAUD_RATE);
 	crm_periph_clock_enable(CRM_GPIOD_PERIPH_CLOCK, TRUE);
 	crm_periph_clock_enable(CRM_GPIOC_PERIPH_CLOCK, TRUE);

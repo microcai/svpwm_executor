@@ -63,7 +63,7 @@ public:
     }
 
     // seq 1 > 5 > 4 > 6 > 2 > 3 > 1     000 001 010 011 100 101 110 111
-    int m_hall_to_sector_map[8] = { -1,  0,  4,  5,  2,  1,  3 , -1 };
+    int m_hall_to_sector_map[8] = { -1,  5,  3,  4,  1,  0,  2 , -1 };
 
     int hall_state = -1;
     float erpm = 0;

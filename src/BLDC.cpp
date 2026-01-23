@@ -1,5 +1,8 @@
 
 #include "BLDC.hpp"
+#include <math.h>
+
+extern float sin_of_degree(float degree);
 
 BLDC::BLDC(motorlib::pwmdriver* driver, hall_sensor * _hall)
     : m_driver(driver)
@@ -30,9 +33,61 @@ void BLDC::set_duty(float _output_duty)
     output_duty = _output_duty;
 }
 
-void BLDC::set_foc(float angle, float duty)
+void BLDC::set_foc(float electron_angle_, float Uout)
 {
 
+    using float_number = float;
+
+    // 使用 SVPWM 的方式产生 输出
+    // find the sector we are in currently
+    int sector = static_cast<int>(electron_angle_ / 120);
+    static const float_number sector_angle[]
+        = { float_number(0), float_number(120), float_number(240), float_number(360) };
+
+    auto angle_in_sector = electron_angle_ - sector_angle[sector];
+
+    float_number T1 = Uout * sin_of_degree(120 - angle_in_sector);
+    float_number T2 = Uout * sin_of_degree(angle_in_sector);
+
+    float_number Tmax;
+
+    if (angle_in_sector > 60)
+        Tmax = T2;
+    else
+        Tmax = T1;
+
+    float_number center = (float_number{ 1 } - Tmax) / 2;
+
+    float_number U_a, U_b, U_c;
+    switch (sector)
+    {
+        case 0:
+            U_a = T2;
+            U_b = 0;
+            U_c = T1;
+            break;
+        case 1:
+            U_a = T1;
+            U_b = T2;
+            U_c = 0;
+            break;
+        case 2:
+            U_a = 0;
+            U_b = T1;
+            U_c = T2;
+            break;
+        default:
+            // possible error state
+            U_a = 0.0f;
+            U_b = 0.0f;
+            U_c = 0.0f;
+    }
+
+    U_a += center;
+    U_b += center;
+    U_c += center;
+
+    m_driver->set_duty(U_c, U_b, U_a);
 }
 
 void BLDC::pwm_callback(int pwm_freq, int perids)
@@ -41,56 +96,27 @@ void BLDC::pwm_callback(int pwm_freq, int perids)
         return;
     // update modulation based on hall state and duty
     auto step = m_hall->get_sector();
+    int electron_angle_;
 
-    // 小于 0 处理成反转.
-    auto _duty = std::abs(output_duty);
+    auto Uout = std::abs(output_duty);
 
-    if (output_duty >= 0)
+    if (Uout < 0.01)
     {
-        switch (step)
-        {
-            case 0:
-                m_driver->set_duty(_duty, 0, -1);
-                break;
-            case 1:
-                m_driver->set_duty(-1, 0, _duty);
-                break;
-            case 2:
-                m_driver->set_duty(0, -1, _duty);
-                break;
-            case 3:
-                m_driver->set_duty(0, _duty, -1);
-                break;
-            case 4:
-                m_driver->set_duty(-1, _duty, 0);
-                break;
-            default: 
-                m_driver->set_duty(_duty, -1, 0);
-                break;
-        }
+        m_driver->set_duty(-1.0f, -1.0f, -1.0f);
+        return;
+    }
+    else if (output_duty > 0)
+    {
+        electron_angle_ = step*60 + 90;
+        if (electron_angle_ >= 360)
+            electron_angle_ -= 360;
     }
     else
     {
-        switch (step)
-        {
-            case 3:
-                m_driver->set_duty(_duty, 0, -1);
-                break;
-            case 4:
-                m_driver->set_duty(-1, 0, _duty);
-                break;
-            case 5:
-                m_driver->set_duty(0, -1, _duty);
-                break;
-            case 0:
-                m_driver->set_duty(0, _duty, -1);
-                break;
-            case 1:
-                m_driver->set_duty(-1, _duty, 0);
-                break;
-            default:
-                m_driver->set_duty(_duty, -1, 0);
-                break;
-        }
+        electron_angle_ = step*60 - 90;
+        if (electron_angle_ < 0)
+            electron_angle_ += 360;
     }
+
+    set_foc(electron_angle_, Uout);
 }

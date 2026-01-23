@@ -13,12 +13,7 @@ VVVF::VVVF(motorlib::pwmdriver* driver)
 constexpr float Deg2Rad = 3.14159265358979323846/180;
 constexpr float TWO_PI = 3.14159265358979323846 * 2;
 
-float sin_of_degree(float degree)
-{
-    float sinval, cosval;
-    arm_sin_cos_f32(degree, &sinval, &cosval);
-    return sinval;
-}
+extern float sin_of_degree(float degree);
 
 void VVVF::pwm_callback(int pwm_freq, int perids)
 {
