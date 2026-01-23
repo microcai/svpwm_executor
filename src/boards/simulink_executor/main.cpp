@@ -26,6 +26,9 @@
 
 #include "SEGGER_RTT.h"
 
+#define CurrentGain 0.0183150183150183
+#define VbusGain 0.0117948717948718
+
 template<typename T=float>
 T clamp(T v, T min, T max)
 {
@@ -239,7 +242,10 @@ void dc_mode_usb_reporter()
 		one_ms_interval.wait();
 		command_last_received ++;
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
-		report_packet.DC_current = ADC_Converted_Data[ADC_IDX_ISENSEA] - ADC_Converted_Data_average[ADC_IDX_ISENSEA];
+		report_packet.BUS_Voltage *= VbusGain;
+		report_packet.DC_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEA]) - ADC_Converted_Data_average[ADC_IDX_ISENSEA];
+		report_packet.DC_current *= CurrentGain;
+
 		report_packet.EncoderPos = tmr_counter_value_get(TMR3)/10000.0 * 360.0;
 		report_packet.encoder_speed = encoder_speed;
 
@@ -275,12 +281,23 @@ void vfd_mode_usb_reporter(VVVF* vvvf)
 		one_ms_interval.wait();
 
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
-		float centor = ADC_Converted_Data[ADC_IDX_ISENSEA] + ADC_Converted_Data[ADC_IDX_ISENSEB] + ADC_Converted_Data[ADC_IDX_ISENSEC];
+		report_packet.BUS_Voltage *= VbusGain;
+
+		report_packet.A_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEA]);//ADC_Converted_Data_average[ADC_IDX_ISENSEA_REF];
+		report_packet.B_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEB]);//ADC_Converted_Data_average[ADC_IDX_ISENSEB_REF];
+		report_packet.C_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEC]);//ADC_Converted_Data_average[ADC_IDX_ISENSEC_REF];
+
+		float centor = report_packet.A_current + report_packet.B_current + report_packet.C_current;
+
 		centor /=3;
 
-		report_packet.A_current = ADC_Converted_Data[ADC_IDX_ISENSEA] - centor;//ADC_Converted_Data_average[ADC_IDX_ISENSEA_REF];
-		report_packet.B_current = ADC_Converted_Data[ADC_IDX_ISENSEB] - centor;//ADC_Converted_Data_average[ADC_IDX_ISENSEB_REF];
-		report_packet.C_current = ADC_Converted_Data[ADC_IDX_ISENSEC] - centor;//ADC_Converted_Data_average[ADC_IDX_ISENSEC_REF];
+		report_packet.A_current -= centor;
+		report_packet.B_current -= centor;
+		report_packet.C_current -= centor;
+		report_packet.A_current *= CurrentGain;
+		report_packet.B_current *= CurrentGain;
+		report_packet.C_current *= CurrentGain;
+
 		report_packet.current_angle_of_output = vvvf->cur_angle;
 		report_packet.EncoderPos = tmr_counter_value_get(TMR3)/10000.0 * 360.0;
 		report_packet.encoder_speed = encoder_speed;
@@ -377,7 +394,13 @@ void hall_study(BLDC* bldc)
 
 void svpwm_mode_usb_commander(BLDC* bldc)
 {
+	
 	corothread::thread_delay(200);
+
+	// hall_study(bldc);
+
+	// bldc->set_duty(0.1);
+	// return;
 
 	struct svpwm_mode_command_packet{
 		uint32_t header; // header must be 'BLDC'
@@ -452,12 +475,22 @@ void svpwm_mode_usb_reporter(BLDC* bldc)
 		ttl_counter ++;
 		command_last_received ++;
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
-		float centor = ADC_Converted_Data[ADC_IDX_ISENSEA] + ADC_Converted_Data[ADC_IDX_ISENSEB] + ADC_Converted_Data[ADC_IDX_ISENSEC];
+		report_packet.BUS_Voltage *= VbusGain;
+
+		report_packet.A_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEA]);//ADC_Converted_Data_average[ADC_IDX_ISENSEA_REF];
+		report_packet.B_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEB]);//ADC_Converted_Data_average[ADC_IDX_ISENSEB_REF];
+		report_packet.C_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEC]);//ADC_Converted_Data_average[ADC_IDX_ISENSEC_REF];
+
+		float centor = report_packet.A_current + report_packet.B_current + report_packet.C_current;
+
 		centor /=3;
 
-		report_packet.A_current = ADC_Converted_Data[ADC_IDX_ISENSEA] - centor;//ADC_Converted_Data_average[ADC_IDX_ISENSEA_REF];
-		report_packet.B_current = ADC_Converted_Data[ADC_IDX_ISENSEB] - centor;//ADC_Converted_Data_average[ADC_IDX_ISENSEB_REF];
-		report_packet.C_current = ADC_Converted_Data[ADC_IDX_ISENSEC] - centor;//ADC_Converted_Data_average[ADC_IDX_ISENSEC_REF];
+		report_packet.A_current -= centor;
+		report_packet.B_current -= centor;
+		report_packet.C_current -= centor;
+		report_packet.A_current *= CurrentGain;
+		report_packet.B_current *= CurrentGain;
+		report_packet.C_current *= CurrentGain;
 
 		report_packet.pos_by_hall = tmr3_hall.get_sector() * 60 + 30;
 		report_packet.erpm = tmr3_hall.erpm;
