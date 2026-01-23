@@ -209,6 +209,7 @@ struct at32pwmdriver_impl
 		tmr_period_buffer_enable(tmr, TRUE);
 
 		tmr_interrupt_enable(tmr, TMR_OVF_INT, TRUE);
+		tmr_interrupt_enable(TMR1, TMR_BRK_INT, TRUE);
 
 		set_frequency(pwm_frequency);
 
@@ -223,6 +224,8 @@ struct at32pwmdriver_impl
   		nvic_irq_enable(TMR1_CH_IRQn, 0, 0);
 		#else
   		nvic_irq_enable(TMR1_OVF_TMR10_IRQn, 0, 0);
+		nvic_irq_enable(TMR1_BRK_TMR9_IRQn, 0, 0);
+
 		#endif
 
 		set_duty(-1, -1, -1);
@@ -514,6 +517,8 @@ struct at32pwmdriver_impl
 
 		set_duty(0, 0, 0);
 
+		tmr_interrupt_enable(TMR1, TMR_BRK_INT, TRUE);
+		tmr_output_enable(tmr, TRUE);
 	}
 
     void stop()
@@ -617,6 +622,18 @@ extern "C" void TMR1_CH_IRQHandler(void)
 		}
 	}
 }
+
+void TMR1_BRK_TMR9_IRQHandler(void)
+{
+  	/* TMR9_CH1 toggling with frequency = 366.2 Hz */
+	if (tmr_interrupt_flag_get(TMR1, TMR_BRK_FLAG) != RESET)
+	{
+		tmr_flag_clear(TMR1, TMR_BRK_FLAG );
+		_g_instance->parent->break_status = 1;
+		tmr_interrupt_enable(TMR1, TMR_BRK_INT, FALSE);
+	}
+}
+
 
 namespace os{
 	void reset_mcu()

@@ -126,6 +126,8 @@ struct callable
         {
             delete reinterpret_cast<functor_t*>(const_cast<void*>(m_data));
         }
+        m_data = nullptr;
+        m_function = nullptr;
     }
 
     void (*m_function)(const void* data);

@@ -5,7 +5,9 @@
 VVVF::VVVF(motorlib::pwmdriver* driver)
     : m_driver(driver)
 {
-    m_driver->link_timer(&VVVF::pwm_callback, this);
+    m_driver->link_timer([](int pwm_freq, int perids, void* user_data){
+        reinterpret_cast<VVVF*>(user_data)->pwm_callback(pwm_freq, perids);
+    }, this);
 }
 
 constexpr float Deg2Rad = 3.14159265358979323846/180;

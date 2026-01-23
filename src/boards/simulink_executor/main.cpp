@@ -1,9 +1,10 @@
 
-#include "at32f402_405_tmr.h"
 #if defined (BOARD_SIMULINK_BOARD)
 
 #include <Arduino.h>
 #include <USBSerial.h>
+
+#include "at32f402_405_tmr.h"
 
 #include "dros/mcu_coro.hpp"
 #include "dros/coro_condvar.hpp"
@@ -19,6 +20,21 @@
 
 #include "mtl.hpp"
 #include "vvvf.hpp"
+#include "BLDC.hpp"
+
+#include "tmr2_eclipsed_timer.h"
+
+
+template<typename T=float>
+T clamp(T v, T min, T max)
+{
+	if (v < min)
+		return min;
+	else if (v > max)
+		return max;
+	else
+		return v;
+}
 
 mtl::static_store<motorlib::at32pwmdriver> driver_store;
 
@@ -124,7 +140,9 @@ void ADC_init()
 	nvic_irq_enable(ADC1_IRQn, 0 , 0);
 }
 
+int ttl_counter = 0;
 corothread::condition_variable one_ms_interval;
+hall_sensor  tmr3_hall;
 
 void interval_setup(int freq)
 {
@@ -314,13 +332,18 @@ void vfd_mode_usb_commander(VVVF* vvvf)
 	}
 }
 
-void svpwm_mode_usb_commander(motorlib::pwmdriver* pwm_driver)
+void svpwm_mode_usb_commander(BLDC* bldc)
 {
 	struct svpwm_mode_command_packet{
 		uint32_t header; // header must be 'BLDC'
 		float dutyA;
 		float dutyB;
 		float dutyC;
+	};
+
+	struct bldc_mode_command_packet{
+		uint32_t header; // header must be 'BLDC'
+		float duty;
 	};
 
 	for(;;)
@@ -334,46 +357,78 @@ void svpwm_mode_usb_commander(motorlib::pwmdriver* pwm_driver)
 		if (len == 16)
 		{
 			const svpwm_mode_command_packet* cmd_pkt = reinterpret_cast<const svpwm_mode_command_packet*>(input_buffer);
-			if (cmd_pkt->header == 'BLDC')
+			if (cmd_pkt->header == 'SPWM')
 			{
 				togglePin(LED2_PIN);
-				pwm_driver->set_duty(cmd_pkt->dutyA, cmd_pkt->dutyB, cmd_pkt->dutyC);
+				bldc->set_duty(cmd_pkt->dutyA, cmd_pkt->dutyB, cmd_pkt->dutyC);
+				command_last_received = 0;
 			}
 		}
+		else if (len == 8)
+		{
+			const bldc_mode_command_packet* cmd_pkt = reinterpret_cast<const bldc_mode_command_packet*>(input_buffer);
+			if (cmd_pkt->header == 0x424c4443)
+			{
+				command_last_received = 0;
+				togglePin(LED2_PIN);
+				bldc->set_duty(clamp(cmd_pkt->duty, -1.0f, 1.0f));
+			}
+		}
+		
+		if (command_last_received > 1000)
+		{
+			bldc->set_duty(-1.0f,-1.0f, -1.0f);
+		}			
 	}
 }
 
-void svpwm_mode_usb_reporter()
+void svpwm_mode_usb_reporter(BLDC* bldc)
 {
-
 	struct svpwm_mode_report_packet
 	{
 		uint32_t header; // header must be 'BLDC'
-		float time_stamp;
-		float hall_state;
 		float BUS_Voltage;
 		float A_current;
 		float B_current;
 		float C_current;
+		float pos_by_hall;
+		float erpm;
 		uint32_t tail;
 	};
 
 	svpwm_mode_report_packet report_packet = {'BLDC'};
-	report_packet.tail = 0x45454545;
+	report_packet.tail = 0x7F800000;
 
-	interval_setup(1000);
+	interval_setup(500);
 
 	for(;;)
 	{
 		one_ms_interval.wait();
-		report_packet.time_stamp = millis()/1000.0f;
+		ttl_counter ++;
+		command_last_received ++;
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
-		report_packet.A_current = ADC_Converted_Data[ADC_IDX_ISENSEA] - ADC_Converted_Data_average[ADC_IDX_ISENSEA_REF];
-		report_packet.B_current = ADC_Converted_Data[ADC_IDX_ISENSEB] - ADC_Converted_Data_average[ADC_IDX_ISENSEB_REF];
-		report_packet.C_current = ADC_Converted_Data[ADC_IDX_ISENSEC] - ADC_Converted_Data_average[ADC_IDX_ISENSEC_REF];
-		report_packet.hall_state = digitalRead(PC6) + (digitalRead(PC7) << 1) + (digitalRead(PC8) << 2);
+		float centor = ADC_Converted_Data[ADC_IDX_ISENSEA] + ADC_Converted_Data[ADC_IDX_ISENSEB] + ADC_Converted_Data[ADC_IDX_ISENSEC];
+		centor /=3;
 
-		SerialUSB.write((const uint8_t*) &report_packet, sizeof(report_packet));
+		report_packet.A_current = ADC_Converted_Data[ADC_IDX_ISENSEA] - centor;//ADC_Converted_Data_average[ADC_IDX_ISENSEA_REF];
+		report_packet.B_current = ADC_Converted_Data[ADC_IDX_ISENSEB] - centor;//ADC_Converted_Data_average[ADC_IDX_ISENSEB_REF];
+		report_packet.C_current = ADC_Converted_Data[ADC_IDX_ISENSEC] - centor;//ADC_Converted_Data_average[ADC_IDX_ISENSEC_REF];
+
+		report_packet.pos_by_hall = tmr3_hall.get_sector() * 60 + 30;
+		report_packet.erpm = tmr3_hall.erpm;
+
+		if (ttl_counter >  1200)
+		{
+			// get_eclipsed_and_reset();
+			tmr3_hall.erpm = 0;
+		}
+		else if (ttl_counter >  300)
+		{
+			// get_eclipsed_and_reset();
+			tmr3_hall.erpm = tmr3_hall.erpm * 0.99;
+		}
+
+		SerialUSB.write((const uint8_t*) &report_packet, sizeof(report_packet));		
 	}
 }
 
@@ -383,6 +438,8 @@ static __IO uint32_t ADC_Convert_count = 0;
 static corothread::thread_context reporter_thread_ctx;
 static corothread::thread_context commander_thread_ctx;
 
+
+void hall_tmr3_init();
 void encoder_tmr3_init(void);
 
 extern "C" void EXINT9_5_IRQHandler()
@@ -439,12 +496,15 @@ void setup()
 	{
 		ADC_Converted_Data_average[i] = ADC_Converted_Data_sum[i]/(ADC_Convert_count - 5000);
 	}
+
 	// init USB CDC
 	SerialUSB.begin();
 
 	digitalWrite_HIGH(GATE_EN_PIN);
 
 	led_status_1(LED1_PIN);
+
+	// BLDC
 
 	#if BOARD_MODE == 1
 		encoder_tmr3_init();
@@ -463,14 +523,14 @@ void setup()
 		nvic_irq_enable(EXINT9_5_IRQn, 0, 1);
 		corothread::create_static_context(&reporter_thread_ctx, callable(&dc_mode_usb_reporter));
 		corothread::create_static_context(&commander_thread_ctx, callable(&dc_mode_usb_commander, pwm_driver));
-
 	#elif BOARD_MODE == 2
-		corothread::create_static_context(&reporter_thread_ctx, callable(&svpwm_mode_usb_reporter));
-		corothread::create_static_context(&commander_thread_ctx, callable(&svpwm_mode_usb_commander, pwm_driver));
+		tmr2_eclipse_timer_init();
+		hall_tmr3_init();
+		tmr3_hall.hal_irq_handle(get_eclipsed_and_reset());
+		BLDC * bldc = new BLDC(pwm_driver, &tmr3_hall);
+		corothread::create_static_context(&reporter_thread_ctx, callable(&svpwm_mode_usb_reporter, bldc));
+		corothread::create_static_context(&commander_thread_ctx, callable(&svpwm_mode_usb_commander, bldc));
 	#endif
-
-	// wdt_enable();
-
 	// app->switch_mode(op_mode::mode_BLDC);
 	adc_ordinary_software_trigger_enable(ADC1, TRUE);
 }
@@ -529,6 +589,15 @@ int angle_diff(int cur_angle, int pre_angle)
 	}
 }
 
+extern "C" void TMR3_GLOBAL_IRQHandler()
+{
+  if(tmr_interrupt_flag_get(TMR3, TMR_TRIGGER_FLAG) == SET)
+  {
+	ttl_counter = 0;
+	tmr3_hall.hal_irq_handle(get_eclipsed_and_reset());
+    tmr_flag_clear(TMR3, TMR_TRIGGER_FLAG);
+  }
+}
 
 extern "C" void TMR6_GLOBAL_IRQHandler(void)
 {

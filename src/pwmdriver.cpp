@@ -5,22 +5,28 @@ namespace motorlib
 {
 
 pwmdriver::pwmdriver()
-    : parent(nullptr)
+    : callback_ptr(nullptr)
 {}
 
 pwmdriver::~pwmdriver()
 {}
 
-void pwmdriver::link_timer(pwm_callback_memptr cb, VVVF* _parent)
+void pwmdriver::link_timer(pwm_callback_ptr cb, void* _user_data)
 {
     this->callback_ptr = cb;
-    this->parent = _parent;
+    this->callback_ptr_user_data = _user_data;
+}
+
+void pwmdriver::unlink_timer()
+{
+    this->callback_ptr = nullptr;
+    this->callback_ptr_user_data = nullptr;    
 }
 
 void pwmdriver::invoke_callbacks(int pwm, int perids)
 {
-    if (parent)
-        (parent->*callback_ptr)(pwm, perids);
+    if (callback_ptr)
+        callback_ptr(pwm, perids, callback_ptr_user_data);
 }
 
 }
