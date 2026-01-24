@@ -464,7 +464,7 @@ void svpwm_mode_usb_reporter(BLDC* bldc)
 		uint32_t tail;
 	};
 
-	svpwm_mode_report_packet report_packet = {'BLDC'};
+	svpwm_mode_report_packet report_packet;
 	report_packet.tail = 0x7F800000;
 
 	interval_setup(500);
@@ -473,6 +473,7 @@ void svpwm_mode_usb_reporter(BLDC* bldc)
 	{
 		one_ms_interval.wait();
 		ttl_counter ++;
+		report_packet.header = command_last_received;
 		command_last_received ++;
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
 		report_packet.BUS_Voltage *= VbusGain;

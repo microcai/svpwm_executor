@@ -95,13 +95,20 @@ void BLDC::pwm_callback(int pwm_freq, int perids)
     if (direct_control_mode)
         return;
     // update modulation based on hall state and duty
+    m_hall->hal_irq_handle(0);
     auto step = m_hall->get_sector();
     int electron_angle_;
+
+    if (step == -1)
+    {
+        set_duty(-1, -1, -1);
+        return;
+    }
 
     auto Uout = std::abs(output_duty);
 
     if (Uout < 0.01)
-    {
+    { 
         m_driver->set_duty(-1.0f, -1.0f, -1.0f);
         return;
     }
