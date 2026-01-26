@@ -59,11 +59,15 @@ void tmr2_eclipse_timer_init()
   tmr_cnt_dir_set(TMR2, TMR_COUNT_UP);
   tmr_clock_source_div_set(TMR2, TMR_CLOCK_DIV1);
   tmr_period_buffer_enable(TMR2, FALSE);
-  tmr_base_init(TMR2, 4294967294, 0);
+  tmr_base_init(TMR2, system_core_clock, 0);
 
   tmr_counter_enable(TMR2, TRUE);
 
   /* add user code begin tmr2_init 2 */
+
+  nvic_irq_enable(TMR2_GLOBAL_IRQn, 1, 2);
+
+  tmr_interrupt_enable(TMR2, TMR_OVF_INT, TRUE);
 
   /* add user code end tmr2_init 2 */
 }
@@ -72,9 +76,12 @@ int get_eclipsed()
 {
     return tmr_counter_value_get(TMR2);
 }
+
 int get_eclipsed_and_reset()
 {
     auto v = tmr_counter_value_get(TMR2);
     tmr_counter_value_set(TMR2, 0);
-    return v;
+    if (v> 20)
+       return v - 20;
+    return 0;
 }

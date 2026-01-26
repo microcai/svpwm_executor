@@ -4,9 +4,10 @@
 
 extern float sin_of_degree(float degree);
 
-BLDC::BLDC(motorlib::pwmdriver* driver, hall_sensor * _hall)
+BLDC::BLDC(motorlib::pwmdriver* driver, hall_sensor * _hall, PLL* angle_pll)
     : m_driver(driver)
     , m_hall(_hall)
+    , m_angle_pll(angle_pll)
 {
     m_driver->link_timer([](int pwm_freq, int perids, void* user_data){
         reinterpret_cast<BLDC*>(user_data)->pwm_callback(pwm_freq, perids);
@@ -94,16 +95,17 @@ void BLDC::pwm_callback(int pwm_freq, int perids)
 {
     if (direct_control_mode)
         return;
-    // update modulation based on hall state and duty
-    m_hall->hal_irq_handle(0);
-    auto step = m_hall->get_sector();
-    int electron_angle_;
 
-    if (step == -1)
-    {
-        set_duty(-1, -1, -1);
-        return;
-    }
+    float passed_time = (float) perids / (float) pwm_freq;
+
+    auto tracked_angle = m_angle_pll->get_predict_phase(passed_time);
+
+    if (!m_angle_pll->is_phase_locked())
+        tracked_angle = m_hall->get_sector() * 60;
+
+    // update modulation based on hall state and duty
+    // auto step = m_hall->get_sector();
+    int electron_angle_;
 
     auto Uout = std::abs(output_duty);
 
@@ -114,13 +116,13 @@ void BLDC::pwm_callback(int pwm_freq, int perids)
     }
     else if (output_duty > 0)
     {
-        electron_angle_ = step*60 + 90;
+        electron_angle_ = tracked_angle + 90;
         if (electron_angle_ >= 360)
             electron_angle_ -= 360;
     }
     else
     {
-        electron_angle_ = step*60 - 90;
+        electron_angle_ = tracked_angle - 90;
         if (electron_angle_ < 0)
             electron_angle_ += 360;
     }

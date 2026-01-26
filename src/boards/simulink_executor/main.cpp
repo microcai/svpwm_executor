@@ -1,4 +1,5 @@
 
+#include "system_at32f402_405.h"
 #if defined (BOARD_SIMULINK_BOARD)
 
 #include <Arduino.h>
@@ -147,6 +148,7 @@ void ADC_init()
 int ttl_counter = 0;
 corothread::condition_variable one_ms_interval;
 hall_sensor  tmr3_hall;
+PLL hall_pll;
 
 void interval_setup(int freq)
 {
@@ -494,20 +496,9 @@ void svpwm_mode_usb_reporter(BLDC* bldc)
 		report_packet.C_current *= CurrentGain;
 
 		report_packet.pos_by_hall = tmr3_hall.get_sector() * 60 + 30;
-		report_packet.erpm = tmr3_hall.erpm;
+		report_packet.erpm = hall_pll.get_speed();
 
-		if (ttl_counter >  1200)
-		{
-			// get_eclipsed_and_reset();
-			tmr3_hall.erpm = 0;
-		}
-		else if (ttl_counter >  300)
-		{
-			// get_eclipsed_and_reset();
-			tmr3_hall.erpm = tmr3_hall.erpm * 0.99;
-		}
-
-		SerialUSB.write((const uint8_t*) &report_packet, sizeof(report_packet));		
+		SerialUSB.write((const uint8_t*) &report_packet, sizeof(report_packet));
 	}
 }
 
@@ -607,8 +598,8 @@ void setup()
 	#elif BOARD_MODE == 2
 		tmr2_eclipse_timer_init();
 		hall_tmr3_init();
-		tmr3_hall.hal_irq_handle(get_eclipsed_and_reset());
-		BLDC * bldc = new BLDC(pwm_driver, &tmr3_hall);
+		tmr3_hall.hal_irq_handle();
+		BLDC * bldc = new BLDC(pwm_driver, &tmr3_hall, &hall_pll);
 		corothread::create_static_context(&reporter_thread_ctx, callable(&svpwm_mode_usb_reporter, bldc));
 		corothread::create_static_context(&commander_thread_ctx, callable(&svpwm_mode_usb_commander, bldc));
 	#endif
@@ -644,9 +635,6 @@ extern "C" void DMA1_Channel1_IRQHandler(void)
 template<int full_angle>
 int angle_diff(int cur_angle, int pre_angle)
 {
-	auto guess1 = cur_angle - pre_angle;
-	auto guess2 = cur_angle + full_angle - pre_angle;
-
 	int diff1, diff2;
 	bool cur_bigger = cur_angle >= pre_angle;
 	diff1 = cur_angle - pre_angle;
@@ -675,9 +663,24 @@ extern "C" void TMR3_GLOBAL_IRQHandler()
   if(tmr_interrupt_flag_get(TMR3, TMR_TRIGGER_FLAG) == SET)
   {
 	ttl_counter = 0;
-	tmr3_hall.hal_irq_handle(get_eclipsed_and_reset());
+	tmr3_hall.hal_irq_handle();
+	get_eclipsed_and_reset();
+	hall_pll.new_phase_arrive(tmr3_hall.get_sector() * 60);
     tmr_flag_clear(TMR3, TMR_TRIGGER_FLAG);
+
+	// char buf[64];
+	// int len = snprintf(buf, 64, "hall = %d, tmr counter = %d\r\n", tmr3_hall.hall_state, tmr_counter_value_get(TMR3) );
+	// tmr_counter_value_set(TMR3, 0);
+
+	// SEGGER_RTT_Write(0, buf, len);
+
   }
+}
+
+extern "C" void TMR2_GLOBAL_IRQHandler()
+{
+	hall_pll.reset();
+    tmr_flag_clear(TMR2, TMR_OVF_FLAG);
 }
 
 extern "C" void TMR6_GLOBAL_IRQHandler(void)

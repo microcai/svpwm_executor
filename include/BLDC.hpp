@@ -5,11 +5,12 @@
 #include "pwmdriver.hpp"
 #include <cstdint>
 #include "hall_sensor.hpp"
+#include "pll.hpp"
 
 class BLDC
 {
 public:
-    BLDC(motorlib::pwmdriver* driver, hall_sensor * _hall);
+    BLDC(motorlib::pwmdriver* driver, hall_sensor * _hall, PLL* angle_pll);
 
     void pwm_callback(int, int);
 
@@ -21,6 +22,7 @@ public:
 
     motorlib::pwmdriver* m_driver;
     hall_sensor* m_hall;
+    PLL* m_angle_pll;
 
     float cur_angle = 0;
     float output_duty = 0;

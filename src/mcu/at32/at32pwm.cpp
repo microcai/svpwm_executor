@@ -139,7 +139,7 @@ struct at32pwmdriver_impl
 		crm_clocks_freq_get(&crm_clocks_freq_struct);
 
 		/* compute the value to be set in arr regiter to generate signal frequency*/
-  		timer_period = (crm_clocks_freq_struct.sclk_freq / pwm_frequency/2 ) - 1;
+  		timer_period = (crm_clocks_freq_struct.sclk_freq / 2/ pwm_frequency ) - 1;
 
 		/* channel 1, 2, 3 configuration in output mode */
 		tmr_output_config_type tmr_output_struct_normal;
@@ -159,7 +159,7 @@ struct at32pwmdriver_impl
 		tmr_output_struct_normal.occ_idle_state = TRUE;
 
 		tmr_reset(tmr);
-  		tmr_base_init(tmr, timer_period, 0);
+  		tmr_base_init(tmr, timer_period, TMR_CLOCK_DIV1);
 		tmr_cnt_dir_set(tmr, TMR_COUNT_TWO_WAY_1);
 		tmr_period_value_set(tmr, timer_period - 1);
 		tmr_output_channel_config(tmr, TMR_SELECT_CHANNEL_1, &tmr_output_struct_normal);
@@ -223,7 +223,7 @@ struct at32pwmdriver_impl
 		#ifdef AT32F421
   		nvic_irq_enable(TMR1_CH_IRQn, 0, 0);
 		#else
-  		nvic_irq_enable(TMR1_OVF_TMR10_IRQn, 0, 0);
+  		nvic_irq_enable(TMR1_OVF_TMR10_IRQn, 0, 1);
 		nvic_irq_enable(TMR1_BRK_TMR9_IRQn, 0, 0);
 
 		#endif

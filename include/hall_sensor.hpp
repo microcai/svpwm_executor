@@ -4,51 +4,7 @@
 #include <Arduino.h>
 #include <assert.h>
 
-template<int min, int max>
-struct cyc_counter
-{
-    static int constexpr numbercount = (max + 1 - min);
-    static int constexpr halfcount = (numbercount)/2;
-
-    cyc_counter(){};
-    cyc_counter(int init) : holded(init){}
-    void operator ++(){
-        holded++;
-        if (holded > max)
-            holded = min;
-    }
-
-    void operator --(){
-        holded --;
-        if (holded < min)
-            holded = max;
-    }
-
-    operator int() {
-        return holded;
-    }
-
-    bool operator > ( cyc_counter other)
-    {
-        auto diff = holded - other.holded;
-        if (diff > halfcount)
-        {
-            return false;
-        }
-        else if (diff > 0)
-        {
-            return true;
-        }
-        else if (diff > -halfcount)
-        {
-            return false;
-        }
-        return true;
-    }
-
-    int holded;
-};
-
+#include "cyccounter.hpp"
 
 
 class hall_sensor
@@ -66,32 +22,8 @@ public:
     int m_hall_to_sector_map[8] = { -1,  5,  3,  4,  1,  0,  2 , -1 };
 
     int hall_state = -1;
-    float erpm = 0;
 
-    cyc_counter<0,5> pre_sector = 0;
-
-    void hal_irq_handle(uint32_t clipsed_tmr_clock) {
+    void hal_irq_handle() {
         hall_state = digitalRead(PC6) + (digitalRead(PC7) << 1) + (digitalRead(PC8) << 2);
-        if (clipsed_tmr_clock == 0)
-            return;
-
-        float new_erpm;
-
-        if (erpm == 0 && clipsed_tmr_clock < 108000000)
-        {
-            erpm = 200;
-            return;
-        }
-        else
-        {
-            new_erpm = system_core_clock * 10 / (float) clipsed_tmr_clock;
-        }
-
-        cyc_counter<0,5> cur_sector = m_hall_to_sector_map[hall_state];
-        if (pre_sector > cur_sector)
-            erpm = erpm /2 -new_erpm/2;
-        else
-            erpm = erpm /2 + new_erpm /2;
-        pre_sector = cur_sector;
     }
 };

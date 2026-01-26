@@ -162,7 +162,7 @@ void hall_tmr3_init(void)
 
   /* configure counter settings */
   tmr_cnt_dir_set(TMR3, TMR_COUNT_UP);
-  tmr_clock_source_div_set(TMR3, TMR_CLOCK_DIV1);
+  tmr_clock_source_div_set(TMR3, TMR_CLOCK_DIV4);
   tmr_period_buffer_enable(TMR3, FALSE);
   tmr_base_init(TMR3, 65535, 0);
 
@@ -189,10 +189,12 @@ void hall_tmr3_init(void)
 
   tmr_primary_mode_select(TMR3, TMR_PRIMARY_SEL_COMPARE);
 
+  tmr_div_value_set(TMR3, 53999);
+  tmr_period_value_set(TMR3, 65535);
   tmr_counter_enable(TMR3, TRUE);
 
   /* add user code begin tmr3_init 2 */
-  nvic_irq_enable(TMR3_GLOBAL_IRQn, 1, 0);
+  nvic_irq_enable(TMR3_GLOBAL_IRQn, 0, 1);
 
   /* add user code end tmr3_init 2 */
 }
