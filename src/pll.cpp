@@ -49,11 +49,11 @@ void PLL::new_phase_arrive(int phase)
     tracked_speed_roate_per_second += phase_diff;
     last_raw_phase = cur_raw_phase;
 
-    static	char buf[128];
-	int len = snprintf(buf, 128, "hall angle = %d, hall_advance = %d, tracked_angle=%d, angle diff = %d, speed = %d, locked_count = %d\r\n",
-        phase,(int)raw_phase_diff, (int) locked_phase_.holded, (int)phase_diff, (int) tracked_speed_roate_per_second/6, phase_success_lock_count);
+    // static	char buf[128];
+	// int len = snprintf(buf, 128, "hall angle = %d, hall_advance = %d, tracked_angle=%d, angle diff = %d, speed = %d, locked_count = %d\r\n",
+    //     phase,(int)raw_phase_diff, (int) locked_phase_.holded, (int)phase_diff, (int) tracked_speed_roate_per_second/6, phase_success_lock_count);
 
-	SEGGER_RTT_Write(0, buf, len);
+	// SEGGER_RTT_Write(0, buf, len);
     time_since_last_arrive = 0;
 }
 
@@ -73,9 +73,9 @@ float PLL::get_predict_phase(float delta)
         static	char buf[128];
         if (phase_success_lock_count > 0)
         {
-            int len = snprintf(buf, 128, "--- pll out out sync --, predict = %d, last_raw = %d\r\n",
-                (int) new_pos.holded, (int)last_raw_phase.holded);
-        	SEGGER_RTT_Write(0, buf, len);
+            // int len = snprintf(buf, 128, "--- pll out out sync --, predict = %d, last_raw = %d\r\n",
+            //     (int) new_pos.holded, (int)last_raw_phase.holded);
+        	// SEGGER_RTT_Write(0, buf, len);
         }
         phase_success_lock_count = 0;
     }

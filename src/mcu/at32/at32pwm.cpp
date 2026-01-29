@@ -54,7 +54,7 @@ struct at32pwmdriver_impl
 	at32pwmdriver* parent;
 	tmr_type* tmr;
 	// hardware variables
-	int pwm_frequency = 8000;
+	int pwm_frequency = 12000;
 
 	crm_clocks_freq_type crm_clocks_freq_struct;
 	uint16_t timer_period = 0;

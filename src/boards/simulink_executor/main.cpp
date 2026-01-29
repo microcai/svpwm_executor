@@ -5,6 +5,7 @@
 #include <USBSerial.h>
 
 #include "at32f402_405_tmr.h"
+#include "at32f402_405_wdt.h"
 
 #include "dros/mcu_coro.hpp"
 #include "dros/coro_condvar.hpp"
@@ -484,6 +485,7 @@ void svpwm_mode_usb_reporter(BLDC* bldc)
 	{
 		uint32_t header; // header must be 'BLDC'
 		float BUS_Voltage;
+		float Bus_Current;
 		float A_current;
 		float B_current;
 		float C_current;
@@ -505,6 +507,8 @@ void svpwm_mode_usb_reporter(BLDC* bldc)
 		command_last_received ++;
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
 		report_packet.BUS_Voltage *= VbusGain;
+		report_packet.Bus_Current = current_sensor.caculated_current.BusCurrent;
+		// report_packet.BUS_Voltage = current_sensor.caculated_current.RealCurrent;
 
 		report_packet.A_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEA]);//ADC_Converted_Data_average[ADC_IDX_ISENSEA_REF];
 		report_packet.B_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEB]);//ADC_Converted_Data_average[ADC_IDX_ISENSEB_REF];
@@ -632,10 +636,13 @@ void setup()
 	#endif
 	// app->switch_mode(op_mode::mode_BLDC);
 	adc_ordinary_software_trigger_enable(ADC1, TRUE);
+
+	wdt_reload_value_set(0xffff);
 }
 
 void loop()
 {
+	wdt_counter_reload();
 	wdt_counter_reload();
 	mcucoro::executor::system_executor().poll();
 }

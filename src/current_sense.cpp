@@ -2,7 +2,7 @@
 #include "arm_math.h"
 #include "current_sense.hpp"
 
-CompontCurrent current_sense::get_current(float VoltageAngle)
+CompontCurrent current_sense::get_current(float VoltageAngle, float hw_duty)
 {
     get_hw_current();
 
@@ -15,7 +15,9 @@ CompontCurrent current_sense::get_current(float VoltageAngle)
     arm_sin_cos_f32(VoltageAngle, &sinval, &cosval);
     arm_clarke_f32(A_current, B_current, &Ialpha,&Ibeta);
 
-    arm_park_f32(Ialpha, Ibeta, &caculated_current.ReactiveCurrent, &caculated_current.ReactiveCurrent, sinval, cosval);
+    arm_park_f32(Ialpha, Ibeta, &caculated_current.ReactiveCurrent, &caculated_current.RealCurrent, sinval, cosval);
 
+    // 母线电流只取决于有功电流.
+    caculated_current.BusCurrent = - (caculated_current.RealCurrent * hw_duty);
     return caculated_current;
 }

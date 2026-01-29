@@ -26,10 +26,13 @@ public:
     PLL* m_angle_pll;
     current_sense* m_cs;
 
+    float InputCurrentLimit = 1;
+    float currentLimit = 15;
     float cur_angle = 0;
     float output_duty = 0;
+    float hw_duty = 0;
 
-    float current_sensed_output_duty = 0;
+    float duty_with_current_limit = 0;
 
     bool direct_control_mode = true;
 };

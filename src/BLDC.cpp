@@ -108,21 +108,47 @@ void BLDC::pwm_callback(int pwm_freq, int perids)
     // auto step = m_hall->get_sector();
     int electron_angle_;
 
-    // 对 限制峰值电流
-    auto current = m_cs->get_current(cur_angle);
+    // 获取电流采样，以便限制峰值电流
+    auto current = m_cs->get_current(cur_angle, hw_duty);
+    bool limit_reached = false;
 
-    if (current.Current > 5)
+    if (current.BusCurrent > InputCurrentLimit*1.2 )
     {
-        current_sensed_output_duty *= 0.98;
+        duty_with_current_limit *= 0.5;
+        limit_reached = true;
     }
-    else
+    else if (current.BusCurrent > InputCurrentLimit )
     {
-        current_sensed_output_duty = current_sensed_output_duty * 0.9 + output_duty * 0.1;
+        duty_with_current_limit *= 0.95;
+        limit_reached = true;
+    }
+    if (current.Current > currentLimit*1.2)
+    {
+        // 大过流立即大幅减小占空比
+        limit_reached = true;
+        duty_with_current_limit *= 0.6;
+    }
+    if (current.BusCurrent > InputCurrentLimit )
+    {
+        limit_reached = true;
+        duty_with_current_limit *= 0.95;
+    }
+    else if (current.Current > currentLimit)
+    {
+        // 小过流稍稍减少占空比
+        limit_reached = true;
+        duty_with_current_limit *= 0.98;
+    }
+    
+    if (!limit_reached)
+    {
+        // 占空比慢速跟踪用户的设定值.
+        duty_with_current_limit = duty_with_current_limit * 0.95 + output_duty * 0.05;
     }
 
-    auto Uout = std::abs(current_sensed_output_duty);
+    hw_duty = std::abs(duty_with_current_limit);
 
-    if (Uout < 0.01)
+    if (hw_duty < 0.01)
     { 
         m_driver->set_duty(-1.0f, -1.0f, -1.0f);
         return;
@@ -140,5 +166,5 @@ void BLDC::pwm_callback(int pwm_freq, int perids)
             electron_angle_ += 360;
     }
 
-    set_foc(electron_angle_, Uout);
+    set_foc(electron_angle_, hw_duty);
 }
