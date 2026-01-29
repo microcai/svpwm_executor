@@ -1,5 +1,4 @@
 
-#include "system_at32f402_405.h"
 #if defined (BOARD_SIMULINK_BOARD)
 
 #include <Arduino.h>
@@ -22,6 +21,7 @@
 #include "mtl.hpp"
 #include "vvvf.hpp"
 #include "BLDC.hpp"
+#include "hall_sensor.hpp"
 
 #include "tmr2_eclipsed_timer.h"
 
@@ -69,6 +69,31 @@ static inline int max(int a, int b, int c)
 		max = c;
 	return max;
 }
+
+
+class at32_cs : public current_sense
+{
+public:
+    virtual void get_hw_current()
+	{
+		A_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEA]);//ADC_Converted_Data_average[ADC_IDX_ISENSEA_REF];
+		B_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEB]);//ADC_Converted_Data_average[ADC_IDX_ISENSEB_REF];
+		C_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEC]);//ADC_Converted_Data_average[ADC_IDX_ISENSEC_REF];
+
+		float centor = A_current + B_current + C_current;
+
+		centor /=3;
+
+		A_current -= centor;
+		B_current -= centor;
+		C_current -= centor;
+		A_current *= CurrentGain;
+		B_current *= CurrentGain;
+		C_current *= CurrentGain;
+	}
+
+};
+
 
 void ADC_init()
 {
@@ -149,6 +174,7 @@ int ttl_counter = 0;
 corothread::condition_variable one_ms_interval;
 hall_sensor  tmr3_hall;
 PLL hall_pll;
+at32_cs current_sensor;
 
 void interval_setup(int freq)
 {
@@ -599,7 +625,8 @@ void setup()
 		tmr2_eclipse_timer_init();
 		hall_tmr3_init();
 		tmr3_hall.hal_irq_handle();
-		BLDC * bldc = new BLDC(pwm_driver, &tmr3_hall, &hall_pll);
+		
+		BLDC * bldc = new BLDC(pwm_driver, &tmr3_hall, &hall_pll, &current_sensor);
 		corothread::create_static_context(&reporter_thread_ctx, callable(&svpwm_mode_usb_reporter, bldc));
 		corothread::create_static_context(&commander_thread_ctx, callable(&svpwm_mode_usb_commander, bldc));
 	#endif

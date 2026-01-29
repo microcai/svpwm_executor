@@ -2,6 +2,7 @@
 #pragma once
 
 
+#include "current_sense.hpp"
 #include "pwmdriver.hpp"
 #include <cstdint>
 #include "hall_sensor.hpp"
@@ -10,7 +11,7 @@
 class BLDC
 {
 public:
-    BLDC(motorlib::pwmdriver* driver, hall_sensor * _hall, PLL* angle_pll);
+    BLDC(motorlib::pwmdriver* driver, hall_sensor * _hall, PLL* angle_pll, current_sense*);
 
     void pwm_callback(int, int);
 
@@ -23,9 +24,12 @@ public:
     motorlib::pwmdriver* m_driver;
     hall_sensor* m_hall;
     PLL* m_angle_pll;
+    current_sense* m_cs;
 
     float cur_angle = 0;
     float output_duty = 0;
+
+    float current_sensed_output_duty = 0;
 
     bool direct_control_mode = true;
 };

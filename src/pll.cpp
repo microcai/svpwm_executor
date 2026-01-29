@@ -90,5 +90,6 @@ float PLL::get_speed()
 
 bool PLL::is_phase_locked()
 {
-    return phase_success_lock_count >= 3;
+    return false;
+    // return phase_success_lock_count >= 3;
 }

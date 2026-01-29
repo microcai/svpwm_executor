@@ -4,10 +4,11 @@
 
 extern float sin_of_degree(float degree);
 
-BLDC::BLDC(motorlib::pwmdriver* driver, hall_sensor * _hall, PLL* angle_pll)
+BLDC::BLDC(motorlib::pwmdriver* driver, hall_sensor * _hall, PLL* angle_pll, current_sense* cs)
     : m_driver(driver)
     , m_hall(_hall)
     , m_angle_pll(angle_pll)
+    , m_cs(cs)
 {
     m_driver->link_timer([](int pwm_freq, int perids, void* user_data){
         reinterpret_cast<BLDC*>(user_data)->pwm_callback(pwm_freq, perids);
@@ -36,7 +37,7 @@ void BLDC::set_duty(float _output_duty)
 
 void BLDC::set_foc(float electron_angle_, float Uout)
 {
-
+    cur_angle = electron_angle_;
     using float_number = float;
 
     // 使用 SVPWM 的方式产生 输出
@@ -107,7 +108,19 @@ void BLDC::pwm_callback(int pwm_freq, int perids)
     // auto step = m_hall->get_sector();
     int electron_angle_;
 
-    auto Uout = std::abs(output_duty);
+    // 对 限制峰值电流
+    auto current = m_cs->get_current(cur_angle);
+
+    if (current.Current > 5)
+    {
+        current_sensed_output_duty *= 0.98;
+    }
+    else
+    {
+        current_sensed_output_duty = current_sensed_output_duty * 0.9 + output_duty * 0.1;
+    }
+
+    auto Uout = std::abs(current_sensed_output_duty);
 
     if (Uout < 0.01)
     { 
