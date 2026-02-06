@@ -18,6 +18,7 @@ public:
     void set_duty(float U_a, float U_b, float U_c);
 
     void set_foc(float angle, float duty);
+    void set_6step(float angle, float duty);
 
     void set_duty(float);
 

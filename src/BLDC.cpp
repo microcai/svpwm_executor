@@ -35,6 +35,20 @@ void BLDC::set_duty(float _output_duty)
     output_duty = _output_duty;
 }
 
+void BLDC::set_6step(float electron_angle_, float Uout)
+{
+    cur_angle = electron_angle_;
+    using float_number = float;
+
+    // 使用 SVPWM 的方式产生 输出
+    // find the sector we are in currently
+    int sector = static_cast<int>(electron_angle_ / 60);
+
+    m_driver->set_6step(sector, Uout);
+
+}
+
+
 void BLDC::set_foc(float electron_angle_, float Uout)
 {
     cur_angle = electron_angle_;
@@ -64,19 +78,19 @@ void BLDC::set_foc(float electron_angle_, float Uout)
     switch (sector)
     {
         case 0:
-            U_a = T2;
+            U_c = T2;
             U_b = 0;
-            U_c = T1;
+            U_a = T1;
             break;
         case 1:
-            U_a = T1;
+            U_c = T1;
             U_b = T2;
-            U_c = 0;
+            U_a = 0;
             break;
         case 2:
-            U_a = 0;
+            U_c = 0;
             U_b = T1;
-            U_c = T2;
+            U_a = T2;
             break;
         default:
             // possible error state
@@ -89,13 +103,16 @@ void BLDC::set_foc(float electron_angle_, float Uout)
     U_b += center;
     U_c += center;
 
-    m_driver->set_duty(U_c, U_b, U_a);
+    m_driver->set_duty(U_a, U_b, U_c);
 }
 
 void BLDC::pwm_callback(int pwm_freq, int perids)
 {
     if (direct_control_mode)
+    {
+        set_6step(m_hall->get_sector(), 0);
         return;
+    }
 
     float passed_time = (float) perids / (float) pwm_freq;
 
@@ -166,5 +183,5 @@ void BLDC::pwm_callback(int pwm_freq, int perids)
             electron_angle_ += 360;
     }
 
-    set_foc(electron_angle_, hw_duty);
+    set_6step(electron_angle_, hw_duty);
 }

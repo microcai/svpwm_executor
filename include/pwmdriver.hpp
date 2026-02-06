@@ -25,6 +25,7 @@ public:
     virtual int get_frequency() = 0;
     virtual void set_frequency(int) = 0;
     virtual void set_duty(float U_a, float U_b, float U_c) = 0;
+    virtual void set_6step(int step, float PWM) = 0;
 
     void link_timer(pwm_callback_ptr, void* user_data);
     void unlink_timer();

@@ -1,4 +1,5 @@
 
+#include "gpio.h"
 #if defined(AT32F421) || defined (AT32M4xx) || defined (AT32F415) || defined (AT32F405) || defined(AT32F402)
 
 #include "pwmdriver.hpp"
@@ -49,6 +50,20 @@ bool at32_board_specific_tmr_gpio_setup();
 
 namespace motorlib
 {
+	struct pin_config
+	{
+		gpio_type* port;
+		gpio_init_type port_cfg;
+		gpio_pins_source_type pin_source;
+		gpio_mux_sel_type mux_type;
+	};
+
+	static void port_setup(const pin_config& pin)
+	{
+		gpio_pin_mux_config(pin.port, pin.pin_source, pin.mux_type);
+		gpio_init(pin.port, (gpio_init_type*) &pin.port_cfg);
+	}
+
 struct at32pwmdriver_impl
 {
 	at32pwmdriver* parent;
@@ -67,74 +82,115 @@ struct at32pwmdriver_impl
 
 	unsigned output_gpio_state = 0;
 
+	pin_config hpwm_pins[3] = {
+		{
+			GPIOA,
+			{
+				GPIO_PINS_8,
+				GPIO_OUTPUT_PUSH_PULL,
+				GPIO_PULL_NONE,
+				GPIO_MODE_MUX,
+				GPIO_DRIVE_STRENGTH_STRONGER				
+			},
+			GPIO_PINS_SOURCE8,
+			GPIO_MUX_1
+		},
+		{
+			GPIOA,
+			{
+				GPIO_PINS_9,
+				GPIO_OUTPUT_PUSH_PULL,
+				GPIO_PULL_NONE,
+				GPIO_MODE_MUX,
+				GPIO_DRIVE_STRENGTH_STRONGER				
+			},
+			GPIO_PINS_SOURCE9,
+			GPIO_MUX_1
+		},
+		{
+			GPIOA,
+			{
+				GPIO_PINS_10,
+				GPIO_OUTPUT_PUSH_PULL,
+				GPIO_PULL_NONE,
+				GPIO_MODE_MUX,
+				GPIO_DRIVE_STRENGTH_STRONGER				
+			},
+			GPIO_PINS_SOURCE10,
+			GPIO_MUX_1			
+		}
+	};
+	pin_config lpwm_pins[3] = {
+		{
+			GPIOA,
+			{
+				GPIO_PINS_7,
+				GPIO_OUTPUT_PUSH_PULL,
+				GPIO_PULL_NONE,
+				GPIO_MODE_MUX,
+				GPIO_DRIVE_STRENGTH_STRONGER				
+			},
+			GPIO_PINS_SOURCE7,
+			GPIO_MUX_1			
+		},
+		{
+			GPIOB,
+			{
+				GPIO_PINS_0,
+				GPIO_OUTPUT_PUSH_PULL,
+				GPIO_PULL_NONE,
+				GPIO_MODE_MUX,
+				GPIO_DRIVE_STRENGTH_STRONGER				
+			},
+			GPIO_PINS_SOURCE0,
+			GPIO_MUX_1			
+		},
+		{
+			GPIOB,
+			{
+				GPIO_PINS_1,
+				GPIO_OUTPUT_PUSH_PULL,
+				GPIO_PULL_NONE,
+				GPIO_MODE_MUX,
+				GPIO_DRIVE_STRENGTH_STRONGER				
+			},
+			GPIO_PINS_SOURCE1,
+			GPIO_MUX_1			
+		}
+	};
+
+	pin_config brk_pin = {
+		GPIOB,
+		{
+			GPIO_PINS_12,
+			GPIO_OUTPUT_OPEN_DRAIN,
+			GPIO_PULL_UP,
+			GPIO_MODE_MUX,
+			GPIO_DRIVE_STRENGTH_STRONGER				
+		},
+		GPIO_PINS_SOURCE12,
+		GPIO_MUX_1			
+	};
+
 	at32pwmdriver_impl(at32pwmdriver* parent)
 		: parent(parent)
 		, tmr(TMR1)
 	{
-		_g_instance = this;
 		// see https://www.arterychip.com/download/APNOTE/AN0069_AT32F421_GPIO_Application_Note_ZH_V2.0.1.pdf
 
-		// AT32F415 的 pwm 输出并不能随意选择输出引脚。
-		// 所以传入的是 tmr index, 选定了一个 定时器，就只能使用这个定时器配好的固定输出引脚
+		crm_periph_clock_enable(CRM_GPIOA_PERIPH_CLOCK, TRUE);
+		crm_periph_clock_enable(CRM_GPIOB_PERIPH_CLOCK, TRUE);
 
+		port_setup(hpwm_pins[0]);
+		port_setup(hpwm_pins[1]);
+		port_setup(hpwm_pins[2]);
+		port_setup(lpwm_pins[0]);
+		port_setup(lpwm_pins[1]);
+		port_setup(lpwm_pins[2]);
+
+		port_setup(brk_pin);
 
 		crm_periph_clock_enable(CRM_TMR1_PERIPH_CLOCK, TRUE);
-
-		if (!at32_board_specific_tmr_gpio_setup())
-		{
-			/* enable tmr1/gpioa/gpiob clock */
-			crm_periph_clock_enable(CRM_GPIOA_PERIPH_CLOCK, TRUE);
-			crm_periph_clock_enable(CRM_GPIOB_PERIPH_CLOCK, TRUE);
-			// debug_periph_mode_set(DEBUG_TMR1_PAUSE, TRUE);
-
-			gpio_init_type  gpio_init_struct = {0};
-			gpio_default_para_init(&gpio_init_struct);
-
-			/* timer1 output pin Configuration */
-			gpio_init_struct.gpio_pins = GPIO_PINS_8|GPIO_PINS_9|GPIO_PINS_10;
-			gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
-			gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
-			gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
-			gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-			gpio_init(GPIOA, &gpio_init_struct);
-
-			#ifdef AT32F42
-			gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE8, GPIO_MUX_2);
-			gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE9, GPIO_MUX_2);
-			gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE10, GPIO_MUX_2);
-			#endif
-
-			#if defined (AT32F421) || defined (AT32F405)
-			gpio_init_struct.gpio_pins = GPIO_PINS_7;
-			gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
-			gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
-			gpio_init_struct.gpio_pull = GPIO_PULL_DOWN;
-			gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-			gpio_init(GPIOA, &gpio_init_struct);
-			gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE7, GPIO_MUX_2);
-
-			gpio_init_struct.gpio_pins = GPIO_PINS_0|GPIO_PINS_1;
-			gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
-			gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
-			gpio_init_struct.gpio_pull = GPIO_PULL_DOWN;
-			gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-			gpio_init(GPIOB, &gpio_init_struct);
-
-			gpio_pin_mux_config(GPIOB, GPIO_PINS_SOURCE0, GPIO_MUX_2);
-			gpio_pin_mux_config(GPIOB, GPIO_PINS_SOURCE1, GPIO_MUX_2);
-			#else
-			gpio_init_struct.gpio_pins = GPIO_PINS_13|GPIO_PINS_14|GPIO_PINS_15;
-			gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
-			gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
-			gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
-			#if defined(AT32M4xx) || defined (AT32F403) || defined(AT32F402) || defined(AT32F405)
-			gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-			#else
-			gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_MAXIMUM;
-			#endif
-			gpio_init(GPIOB, &gpio_init_struct);
-			#endif
-		}
 
 		crm_clocks_freq_get(&crm_clocks_freq_struct);
 
@@ -225,203 +281,57 @@ struct at32pwmdriver_impl
 		#else
   		nvic_irq_enable(TMR1_OVF_TMR10_IRQn, 0, 1);
 		nvic_irq_enable(TMR1_BRK_TMR9_IRQn, 0, 0);
-
 		#endif
+
+		_g_instance = this;
 
 		set_duty(-1, -1, -1);
 	}
 
-	#if defined (AT32F405) || defined (AT32F402)
-	void set_pwma_float()
+	void set_pwm_float(int channel)
 	{
-		gpio_init_type pwm_float_set = {
-			.gpio_pins  = GPIO_PINS_8|GPIO_PINS_7,
-			.gpio_out_type = GPIO_OUTPUT_PUSH_PULL,
-			.gpio_pull = GPIO_PULL_NONE,
-			.gpio_mode = GPIO_MODE_OUTPUT,
-			.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER,
-		};
-		gpio_init(GPIOA, &pwm_float_set);
-		gpio_bits_write(GPIOA, GPIO_PINS_8, FALSE);
-		gpio_bits_write(GPIOA, GPIO_PINS_7, FALSE);
-	}
-	void set_pwma_pwm()
-	{
-		gpio_init_type pwm_float_set = {
-			.gpio_pins  = GPIO_PINS_8|GPIO_PINS_7,
-			.gpio_out_type = GPIO_OUTPUT_PUSH_PULL,
-			.gpio_pull = GPIO_PULL_NONE,
-			.gpio_mode = GPIO_MODE_MUX,
-			.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER,
-		};
-		gpio_init(GPIOA, &pwm_float_set);
-		gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE7, GPIO_MUX_1);
-		gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE8, GPIO_MUX_1);
+		gpio_init_type pwm_float_set = hpwm_pins[channel].port_cfg;
+		pwm_float_set.gpio_mode = GPIO_MODE_OUTPUT;
+		gpio_init(hpwm_pins[channel].port, &pwm_float_set);
+
+		pwm_float_set = lpwm_pins[channel].port_cfg;
+		pwm_float_set.gpio_mode = GPIO_MODE_OUTPUT;
+		gpio_init(lpwm_pins[channel].port, &pwm_float_set);
+
+		gpio_bits_reset(hpwm_pins[channel].port, hpwm_pins[channel].port_cfg.gpio_pins);
+		gpio_bits_reset(lpwm_pins[channel].port, lpwm_pins[channel].port_cfg.gpio_pins);
 	}
 
-	void set_pwmb_float()
+	void set_pwm_pwm(int channel)
 	{
-		gpio_init_type pwm_float_set = {
-			.gpio_pins  = GPIO_PINS_9,
-			.gpio_out_type = GPIO_OUTPUT_PUSH_PULL,
-			.gpio_pull = GPIO_PULL_NONE,
-			.gpio_mode = GPIO_MODE_OUTPUT,
-			.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER,
-		};
-		gpio_init(GPIOA, &pwm_float_set);
-		pwm_float_set.gpio_pins = GPIO_PINS_0;
-		gpio_init(GPIOB, &pwm_float_set);
+		gpio_init(hpwm_pins[channel].port, &hpwm_pins[channel].port_cfg);
 
-		gpio_bits_write(GPIOA, GPIO_PINS_9, FALSE);
-		gpio_bits_write(GPIOB, GPIO_PINS_0, FALSE);
+		gpio_init_type pwm_float_set = lpwm_pins[channel].port_cfg;
+		pwm_float_set.gpio_mode = GPIO_MODE_OUTPUT;
+		gpio_init(lpwm_pins[channel].port, &pwm_float_set);
+
+		gpio_bits_reset(lpwm_pins[channel].port, lpwm_pins[channel].port_cfg.gpio_pins);
 	}
 
-	void set_pwmb_pwm()
+	void set_pwm_cpwm(int channel)
 	{
-		gpio_init_type pwm_float_set = {
-			.gpio_pins  = GPIO_PINS_9,
-			.gpio_out_type = GPIO_OUTPUT_PUSH_PULL,
-			.gpio_pull = GPIO_PULL_NONE,
-			.gpio_mode = GPIO_MODE_MUX,
-			.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER,
-		};
-		gpio_init(GPIOA, &pwm_float_set);
-		pwm_float_set.gpio_pins = GPIO_PINS_0;
-		gpio_init(GPIOB, &pwm_float_set);
-		gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE9, GPIO_MUX_1);
-		gpio_pin_mux_config(GPIOB, GPIO_PINS_SOURCE0, GPIO_MUX_1);
-
+		gpio_init(hpwm_pins[channel].port, &hpwm_pins[channel].port_cfg);
+		gpio_init(lpwm_pins[channel].port, &lpwm_pins[channel].port_cfg);
 	}
 
-	void set_pwmc_float()
+	void set_pwm_low(int channel)
 	{
-		gpio_init_type pwm_float_set = {
-			.gpio_pins  = GPIO_PINS_10,
-			.gpio_out_type = GPIO_OUTPUT_PUSH_PULL,
-			.gpio_pull = GPIO_PULL_NONE,
-			.gpio_mode = GPIO_MODE_OUTPUT,
-			.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER,
-		};
-		gpio_init(GPIOA, &pwm_float_set);
-		pwm_float_set.gpio_pins = GPIO_PINS_1;
-		gpio_init(GPIOB, &pwm_float_set);
+		gpio_init_type pwm_float_set = hpwm_pins[channel].port_cfg;
+		pwm_float_set.gpio_mode = GPIO_MODE_OUTPUT;
+		gpio_init(hpwm_pins[channel].port, &pwm_float_set);
 
-		gpio_bits_write(GPIOA, GPIO_PINS_10, FALSE);
-		gpio_bits_write(GPIOB, GPIO_PINS_1, FALSE);
+		pwm_float_set = lpwm_pins[channel].port_cfg;
+		pwm_float_set.gpio_mode = GPIO_MODE_OUTPUT;
+		gpio_init(lpwm_pins[channel].port, &pwm_float_set);
+
+		gpio_bits_reset(hpwm_pins[channel].port, hpwm_pins[channel].port_cfg.gpio_pins);
+		gpio_bits_set(lpwm_pins[channel].port, lpwm_pins[channel].port_cfg.gpio_pins);
 	}
-
-	void set_pwmc_pwm()
-	{
-		gpio_init_type pwm_float_set = {
-			.gpio_pins  = GPIO_PINS_10,
-			.gpio_out_type = GPIO_OUTPUT_PUSH_PULL,
-			.gpio_pull = GPIO_PULL_NONE,
-			.gpio_mode = GPIO_MODE_MUX,
-			.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER,
-		};
-		gpio_init(GPIOA, &pwm_float_set);
-		pwm_float_set.gpio_pins = GPIO_PINS_1;
-		gpio_init(GPIOB, &pwm_float_set);
-
-		gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE10, GPIO_MUX_1);
-		gpio_pin_mux_config(GPIOB, GPIO_PINS_SOURCE1, GPIO_MUX_1);
-
-	}
-
-	#else
-	void set_pwma_float()
-	{
-		gpio_init_type pwm_float_set = {
-			.gpio_pins  = GPIO_PINS_8,
-			.gpio_out_type = GPIO_OUTPUT_PUSH_PULL,
-			.gpio_pull = GPIO_PULL_NONE,
-			.gpio_mode = GPIO_MODE_OUTPUT,
-			.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER,
-		};
-		gpio_init(GPIOA, &pwm_float_set);
-		pwm_float_set.gpio_pins = GPIO_PINS_13;
-		gpio_init(GPIOB, &pwm_float_set);
-
-		gpio_bits_write(GPIOA, GPIO_PINS_8, FALSE);
-		gpio_bits_write(GPIOB, GPIO_PINS_13, FALSE);
-	}
-
-	void set_pwma_pwm()
-	{
-		gpio_init_type pwm_float_set = {
-			.gpio_pins  = GPIO_PINS_8,
-			.gpio_out_type = GPIO_OUTPUT_PUSH_PULL,
-			.gpio_pull = GPIO_PULL_NONE,
-			.gpio_mode = GPIO_MODE_MUX,
-			.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER,
-		};
-		gpio_init(GPIOA, &pwm_float_set);
-		pwm_float_set.gpio_pins = GPIO_PINS_13;
-		gpio_init(GPIOB, &pwm_float_set);
-	}
-
-	void set_pwmb_float()
-	{
-		gpio_init_type pwm_float_set = {
-			.gpio_pins  = GPIO_PINS_9,
-			.gpio_out_type = GPIO_OUTPUT_PUSH_PULL,
-			.gpio_pull = GPIO_PULL_NONE,
-			.gpio_mode = GPIO_MODE_OUTPUT,
-			.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER,
-		};
-		gpio_init(GPIOA, &pwm_float_set);
-		pwm_float_set.gpio_pins = GPIO_PINS_14;
-		gpio_init(GPIOB, &pwm_float_set);
-
-		gpio_bits_write(GPIOA, GPIO_PINS_8, FALSE);
-		gpio_bits_write(GPIOB, GPIO_PINS_13, FALSE);
-	}
-
-	void set_pwmb_pwm()
-	{
-		gpio_init_type pwm_float_set = {
-			.gpio_pins  = GPIO_PINS_9,
-			.gpio_out_type = GPIO_OUTPUT_PUSH_PULL,
-			.gpio_pull = GPIO_PULL_NONE,
-			.gpio_mode = GPIO_MODE_MUX,
-			.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER,
-		};
-		gpio_init(GPIOA, &pwm_float_set);
-		pwm_float_set.gpio_pins = GPIO_PINS_14;
-		gpio_init(GPIOB, &pwm_float_set);
-	}
-
-	void set_pwmc_float()
-	{
-		gpio_init_type pwm_float_set = {
-			.gpio_pins  = GPIO_PINS_10,
-			.gpio_out_type = GPIO_OUTPUT_PUSH_PULL,
-			.gpio_pull = GPIO_PULL_NONE,
-			.gpio_mode = GPIO_MODE_OUTPUT,
-			.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER,
-		};
-		gpio_init(GPIOA, &pwm_float_set);
-		pwm_float_set.gpio_pins = GPIO_PINS_15;
-		gpio_init(GPIOB, &pwm_float_set);
-
-		gpio_bits_write(GPIOA, GPIO_PINS_8, FALSE);
-		gpio_bits_write(GPIOB, GPIO_PINS_13, FALSE);
-	}
-
-	void set_pwmc_pwm()
-	{
-		gpio_init_type pwm_float_set = {
-			.gpio_pins  = GPIO_PINS_10,
-			.gpio_out_type = GPIO_OUTPUT_PUSH_PULL,
-			.gpio_pull = GPIO_PULL_NONE,
-			.gpio_mode = GPIO_MODE_MUX,
-			.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER,
-		};
-		gpio_init(GPIOA, &pwm_float_set);
-		pwm_float_set.gpio_pins = GPIO_PINS_15;
-		gpio_init(GPIOB, &pwm_float_set);
-	}
-	#endif
 
 	void set_duty(float U_a, float U_b, float U_c)
 	{
@@ -436,34 +346,37 @@ struct at32pwmdriver_impl
 			if (!(output_gpio_state & PWMA_FLOAT))
 			{
 				output_gpio_state |= PWMA_FLOAT;
-				set_pwma_float();
+				set_pwm_float(0);
 			}
+
+			tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
+
 		}
 		else
 		{
 			if (output_gpio_state & PWMA_FLOAT)
 			{
-				set_pwma_pwm();
+				set_pwm_cpwm(0);
 				output_gpio_state &= ~PWMA_FLOAT;
 			}
 
 			tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, channel1_pulse);
 		}
 
-
 		if (U_b < 0)
 		{
 			if (!(output_gpio_state & PWMB_FLOAT))
 			{
 				output_gpio_state |= PWMB_FLOAT;
-				set_pwmb_float();
+				set_pwm_float(1);
 			}
+			tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
 		}
 		else
 		{
 			if (output_gpio_state & PWMB_FLOAT)
 			{
-				set_pwmb_pwm();
+				set_pwm_cpwm(1);
 				output_gpio_state &= ~PWMB_FLOAT;
 			}
 			tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, channel2_pulse);
@@ -474,23 +387,86 @@ struct at32pwmdriver_impl
 			if (!(output_gpio_state & PWMC_FLOAT))
 			{
 				output_gpio_state |= PWMC_FLOAT;
-				set_pwmc_float();
+				set_pwm_float(2);
 			}
+			tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
 		}
 		else
 		{
 			if (output_gpio_state & PWMC_FLOAT)
 			{
-				set_pwmc_pwm();
+				set_pwm_cpwm(2);
 				output_gpio_state &= ~PWMC_FLOAT;
 			}
 			tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, channel3_pulse);
 		}
+	}
 
-		// if (timer_period > 100)
-		// 	tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_4, timer_period - 30);
-		// else
-		// 	tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_4, 3);
+	int m_step = -1;
+
+	void set_6step(int step, float PWM)
+	{
+		m_step = step;
+		uint32_t channel_pulse = static_cast<int>(PWM * timer_period);
+
+		switch (m_step)
+		{
+			case 0: // AB
+			case 6:
+				set_pwm_float(2);
+				set_pwm_pwm(0);
+				set_pwm_low(1);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, channel_pulse);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
+				break;
+			case 1: // CB
+				set_pwm_float(0);
+				set_pwm_pwm(2);
+				set_pwm_low(1);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, channel_pulse);
+				break;
+			case 2: // CA
+				set_pwm_float(1);
+				set_pwm_pwm(2);
+				set_pwm_low(0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, channel_pulse);
+				break;
+			case 3: // BA
+				set_pwm_float(2);
+				set_pwm_pwm(1);
+				set_pwm_low(0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, channel_pulse);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
+				break;
+			case 4: // BC
+				set_pwm_float(0);
+				set_pwm_pwm(1);
+				set_pwm_low(2);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, channel_pulse);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
+				break;
+			case 5: //AC
+				set_pwm_float(1);
+				set_pwm_pwm(0);
+				set_pwm_low(2);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, channel_pulse);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
+				break;
+			default:
+				set_pwm_float(0);
+				set_pwm_float(1);
+				set_pwm_float(2);
+				break;		
+		}
+
 	}
 
     void set_frequency(int freq)
@@ -552,6 +528,12 @@ void at32pwmdriver::set_duty(float U_a, float U_b, float U_c)
 {
 	impl->set_duty(U_a, U_b, U_c);
 }
+
+void at32pwmdriver::set_6step(int step, float PWM)
+{
+	impl->set_6step(step, PWM);
+}
+
 
 void at32pwmdriver::start()
 {
@@ -634,14 +616,11 @@ void TMR1_BRK_TMR9_IRQHandler(void)
 	}
 }
 
-
 namespace os{
 	void reset_mcu()
 	{
 		nvic_system_reset();
 	}
 }
-
-__WEAK bool at32_board_specific_tmr_gpio_setup(){ return false ; }
 
 #endif // defined(STM32F4xx)

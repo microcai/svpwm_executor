@@ -525,7 +525,7 @@ void svpwm_mode_usb_reporter(BLDC* bldc)
 		report_packet.B_current *= CurrentGain;
 		report_packet.C_current *= CurrentGain;
 
-		report_packet.pos_by_hall = tmr3_hall.get_sector() * 60 + 30;
+		report_packet.pos_by_hall = tmr3_hall.get_sector() * 60;
 		report_packet.erpm = hall_pll.get_speed();
 
 		SerialUSB.write((const uint8_t*) &report_packet, sizeof(report_packet));
@@ -642,7 +642,6 @@ void setup()
 
 void loop()
 {
-	wdt_counter_reload();
 	wdt_counter_reload();
 	mcucoro::executor::system_executor().poll();
 }
@@ -843,86 +842,6 @@ void system_clock_config(void)
   /* reduce power comsumption */
   reduce_power_consumption();
 #endif
-}
-
-
-bool at32_board_specific_tmr_gpio_setup()
-{
-	gpio_init_type gpio_init_struct;
-	crm_periph_clock_enable(CRM_GPIOA_PERIPH_CLOCK, TRUE);
-	crm_periph_clock_enable(CRM_GPIOB_PERIPH_CLOCK, TRUE);
-	crm_periph_clock_enable(CRM_GPIOC_PERIPH_CLOCK, TRUE);
-
-	gpio_default_para_init(&gpio_init_struct);
-
-	/* add user code begin tmr1_init 1 */
-
-	/* add user code end tmr1_init 1 */
-
-	/* configure the tmr1 CH1 pin */
-	gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE8, GPIO_MUX_1);
-	gpio_init_struct.gpio_pins = GPIO_PINS_8;
-	gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
-	gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
-	gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
-	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-	gpio_init(GPIOA, &gpio_init_struct);
-
-	/* configure the tmr1 CH1C pin */
-	gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE7, GPIO_MUX_1);
-	gpio_init_struct.gpio_pins = GPIO_PINS_7;
-	gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
-	gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
-	gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
-	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-	gpio_init(GPIOA, &gpio_init_struct);
-
-	/* configure the tmr1 CH2 pin */
-	gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE9, GPIO_MUX_1);
-	gpio_init_struct.gpio_pins = GPIO_PINS_9;
-	gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
-	gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
-	gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
-	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-	gpio_init(GPIOA, &gpio_init_struct);
-
-	/* configure the tmr1 CH2C pin */
-	gpio_pin_mux_config(GPIOB, GPIO_PINS_SOURCE0, GPIO_MUX_1);
-	gpio_init_struct.gpio_pins = GPIO_PINS_0;
-	gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
-	gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
-	gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
-	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-	gpio_init(GPIOB, &gpio_init_struct);
-
-	/* configure the tmr1 CH3 pin */
-	gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE10, GPIO_MUX_1);
-	gpio_init_struct.gpio_pins = GPIO_PINS_10;
-	gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
-	gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
-	gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
-	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-	gpio_init(GPIOA, &gpio_init_struct);
-
-	/* configure the tmr1 CH3C pin */
-	gpio_pin_mux_config(GPIOB, GPIO_PINS_SOURCE1, GPIO_MUX_1);
-	gpio_init_struct.gpio_pins = GPIO_PINS_1;
-	gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
-	gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
-	gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
-	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-	gpio_init(GPIOB, &gpio_init_struct);
-
-	/* configure the tmr1 BRK pin */
-	gpio_pin_mux_config(GPIOB, GPIO_PINS_SOURCE12, GPIO_MUX_1);
-	gpio_init_struct.gpio_pins = GPIO_PINS_12;
-	gpio_init_struct.gpio_mode = GPIO_MODE_MUX;
-	gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
-	gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
-	gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-	gpio_init(GPIOB, &gpio_init_struct);
-
-	return true;
 }
 
 void usb_delay_ms(uint32_t ms)

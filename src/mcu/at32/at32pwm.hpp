@@ -19,11 +19,13 @@ public:
     virtual int get_frequency() override;
     virtual void set_frequency(int) override;
     virtual void set_duty(float U_a, float U_b, float U_c) override;
+    virtual void set_6step(int step, float PWM) override;
+
 private:
     void tmr1_interrupt(int);
     at32pwmdriver_impl * impl;
     friend class at32pwmdriver_impl;
-    char impl_static_storage[80];
+    char impl_static_storage[154];
 };
 
 }
