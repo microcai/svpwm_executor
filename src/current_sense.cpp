@@ -18,6 +18,6 @@ CompontCurrent current_sense::get_current(float VoltageAngle, float hw_duty)
     arm_park_f32(Ialpha, Ibeta, &caculated_current.ReactiveCurrent, &caculated_current.RealCurrent, sinval, cosval);
 
     // 母线电流只取决于有功电流.
-    caculated_current.BusCurrent = - (caculated_current.RealCurrent * hw_duty);
+    caculated_current.BusCurrent = (caculated_current.RealCurrent * hw_duty);
     return caculated_current;
 }

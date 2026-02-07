@@ -56,41 +56,48 @@ void BLDC::set_foc(float electron_angle_, float Uout)
 
     // 使用 SVPWM 的方式产生 输出
     // find the sector we are in currently
-    int sector = static_cast<int>(electron_angle_ / 120);
+    int sector = static_cast<int>(electron_angle_ / 60);
     static const float_number sector_angle[]
-        = { float_number(0), float_number(120), float_number(240), float_number(360) };
+        = { float_number(0), float_number(60), float_number(120), float_number(180), float_number(240), float_number(300), float_number(360) };
 
     auto angle_in_sector = electron_angle_ - sector_angle[sector];
 
-    float_number T1 = Uout * sin_of_degree(120 - angle_in_sector);
+    float_number T1 = Uout * sin_of_degree(60 - angle_in_sector);
     float_number T2 = Uout * sin_of_degree(angle_in_sector);
-
-    float_number Tmax;
-
-    if (angle_in_sector > 60)
-        Tmax = T2;
-    else
-        Tmax = T1;
-
-    float_number center = (float_number{ 1 } - Tmax) / 2;
+    float_number T0 = 1 - T1 - T2;
 
     float_number U_a, U_b, U_c;
     switch (sector)
     {
         case 0:
-            U_c = T2;
-            U_b = 0;
-            U_a = T1;
+            U_a = T0/2;
+            U_b = T1 + T2 + T0/2;
+            U_c = T1 + T0/2;
             break;
         case 1:
-            U_c = T1;
-            U_b = T2;
-            U_a = 0;
+            U_a = T2 + T0/2;
+            U_b = T1 + T2 + T0/2;
+            U_c = T0/2;
             break;
         case 2:
-            U_c = 0;
-            U_b = T1;
-            U_a = T2;
+            U_a = T1 + T2 + T0/2;
+            U_b = T1 + T0/2;
+            U_c = T0/2;
+            break;
+        case 3:
+            U_a = T1 + T2 + T0/2;
+            U_b = T0/2;
+            U_c = T2 + T0/2;
+        break;
+        case 4:
+            U_a = T1 + T0/2;
+            U_b = T0/2;
+            U_c = T1 + T2 + T0/2;
+            break;
+        case 5:
+            U_a = T0/2;
+            U_b = T2 + T0/2;
+            U_c = T1 + T2 + T0/2;
             break;
         default:
             // possible error state
@@ -98,10 +105,6 @@ void BLDC::set_foc(float electron_angle_, float Uout)
             U_b = 0.0f;
             U_c = 0.0f;
     }
-
-    U_a += center;
-    U_b += center;
-    U_c += center;
 
     m_driver->set_duty(U_a, U_b, U_c);
 }
@@ -183,5 +186,6 @@ void BLDC::pwm_callback(int pwm_freq, int perids)
             electron_angle_ += 360;
     }
 
+    // set_foc(electron_angle_,hw_duty);
     set_6step(electron_angle_, hw_duty);
 }

@@ -411,32 +411,7 @@ struct at32pwmdriver_impl
 
 		switch (m_step)
 		{
-			case 0: // AB
-			case 6:
-				set_pwm_float(2);
-				set_pwm_pwm(0);
-				set_pwm_low(1);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, channel_pulse);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
-				break;
-			case 1: // CB
-				set_pwm_float(0);
-				set_pwm_pwm(2);
-				set_pwm_low(1);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, channel_pulse);
-				break;
-			case 2: // CA
-				set_pwm_float(1);
-				set_pwm_pwm(2);
-				set_pwm_low(0);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, channel_pulse);
-				break;
-			case 3: // BA
+			case 0: // BA
 				set_pwm_float(2);
 				set_pwm_pwm(1);
 				set_pwm_low(0);
@@ -444,7 +419,7 @@ struct at32pwmdriver_impl
 				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, channel_pulse);
 				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
 				break;
-			case 4: // BC
+			case 1: // BC
 				set_pwm_float(0);
 				set_pwm_pwm(1);
 				set_pwm_low(2);
@@ -452,13 +427,37 @@ struct at32pwmdriver_impl
 				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, channel_pulse);
 				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
 				break;
-			case 5: //AC
+			case 2: //AC
 				set_pwm_float(1);
 				set_pwm_pwm(0);
 				set_pwm_low(2);
 				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, channel_pulse);
 				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
 				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
+				break;
+			case 3: // AB
+				set_pwm_float(2);
+				set_pwm_pwm(0);
+				set_pwm_low(1);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, channel_pulse);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
+				break;
+			case 4: // CB
+				set_pwm_float(0);
+				set_pwm_pwm(2);
+				set_pwm_low(1);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, channel_pulse);
+				break;
+			case 5: // CA
+				set_pwm_float(1);
+				set_pwm_pwm(2);
+				set_pwm_low(0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, channel_pulse);
 				break;
 			default:
 				set_pwm_float(0);
