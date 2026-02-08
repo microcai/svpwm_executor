@@ -384,36 +384,47 @@ void hall_study(BLDC* bldc)
 	bldc->direct_control_mode = true;
 
 	int pre_hall_state = -1;
+		char buf[64];
 
-	for (int i = 10; i < 360 ; i+=15)
+	for (int i = -90; i < 360 -90  ; i+=15)
 	{
 		corothread::thread_delay(20);
 		bldc->set_foc(i, 0.1);
 		corothread::thread_delay(10);
-		char buf[64];
-		int len = snprintf(buf, 64, "angle %d, hall = %d", i, tmr3_hall.hall_state );
+		int len = snprintf(buf, 64, "angle %d, hall = %d\r\n", i, tmr3_hall.hall_state );
 		if (pre_hall_state != tmr3_hall.hall_state)
 		{
 	  		SEGGER_RTT_Write(0, buf, len);
 			pre_hall_state = tmr3_hall.hall_state;
-			tmr3_hall.update_sector_hall_map(tmr3_hall.hall_state,  i / 60);
 		}
 	}
 
-	for (int i = 10; i < 360 ; i+=15)
+	pre_hall_state = -1;
+
+	for (int i = 0; i < 360 ; i+=15)
 	{
 		corothread::thread_delay(20);
-		bldc->set_foc(i, 0.1);
+		bldc->set_foc(i - 90, 0.1);
 		corothread::thread_delay(10);
-		char buf[64];
-		int len = snprintf(buf, 64, "angle %d, hall = %d", i, tmr3_hall.hall_state );
+		int len = snprintf(buf, 64, "angle %d, hall = %d\r\n", i, tmr3_hall.hall_state );
 		if (pre_hall_state != tmr3_hall.hall_state)
 		{
 	  		SEGGER_RTT_Write(0, buf, len);
 			pre_hall_state = tmr3_hall.hall_state;
-			tmr3_hall.update_sector_hall_map(tmr3_hall.hall_state,  i / 60);
+			tmr3_hall.update_sector_hall_map(tmr3_hall.hall_state,  (i) / 60);
 		}
 	}
+		
+	int len = snprintf(buf, 64, "hall map = [%d, %d, %d, %d, %d, %d]\r\n", 
+		tmr3_hall.m_hall_to_sector_map[1],
+		tmr3_hall.m_hall_to_sector_map[2],
+		tmr3_hall.m_hall_to_sector_map[3],
+		tmr3_hall.m_hall_to_sector_map[4],
+		tmr3_hall.m_hall_to_sector_map[5],
+		tmr3_hall.m_hall_to_sector_map[6]
+	);
+
+	SEGGER_RTT_Write(0, buf, len);
 
 	bldc->set_duty(0);
 	corothread::thread_delay(200);

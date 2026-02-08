@@ -1,5 +1,8 @@
 
 #include "BLDC.hpp"
+#include "SEGGER_RTT.h"
+#include "cyccounter.hpp"
+#include "dsp/controller_functions.h"
 #include <math.h>
 
 extern float sin_of_degree(float degree);
@@ -37,7 +40,6 @@ void BLDC::set_duty(float _output_duty)
 
 void BLDC::set_6step(float electron_angle_, float Uout)
 {
-    cur_angle = electron_angle_;
     using float_number = float;
 
     // 使用 SVPWM 的方式产生 输出
@@ -49,76 +51,59 @@ void BLDC::set_6step(float electron_angle_, float Uout)
 }
 
 
-void BLDC::set_foc(float electron_angle_, float Uout)
+void BLDC::set_foc(float shaft_angle, float Uout)
 {
-    cur_angle = electron_angle_;
+    Uout *= 0.57735;
+    cur_angle = shaft_angle;
+
     using float_number = float;
 
-    // 使用 SVPWM 的方式产生 输出
-    // find the sector we are in currently
-    int sector = static_cast<int>(electron_angle_ / 60);
-    static const float_number sector_angle[]
-        = { float_number(0), float_number(60), float_number(120), float_number(180), float_number(240), float_number(300), float_number(360) };
+    float_number _park_sin, _park_cos;
 
-    auto angle_in_sector = electron_angle_ - sector_angle[sector];
+    static constexpr float_number negtive_half{-0.5};
+    static constexpr float_number _half{0.5};
+    static constexpr float_number _SQRT3_2{0.86602540378443864676372317075294};
 
-    float_number T1 = Uout * sin_of_degree(60 - angle_in_sector);
-    float_number T2 = Uout * sin_of_degree(angle_in_sector);
-    float_number T0 = 1 - T1 - T2;
+    arm_sin_cos_f32(shaft_angle, &_park_sin, &_park_cos);
 
-    float_number U_a, U_b, U_c;
-    switch (sector)
-    {
-        case 0:
-            U_a = T0/2;
-            U_b = T1 + T2 + T0/2;
-            U_c = T1 + T0/2;
-            break;
-        case 1:
-            U_a = T2 + T0/2;
-            U_b = T1 + T2 + T0/2;
-            U_c = T0/2;
-            break;
-        case 2:
-            U_a = T1 + T2 + T0/2;
-            U_b = T1 + T0/2;
-            U_c = T0/2;
-            break;
-        case 3:
-            U_a = T1 + T2 + T0/2;
-            U_b = T0/2;
-            U_c = T2 + T0/2;
-        break;
-        case 4:
-            U_a = T1 + T0/2;
-            U_b = T0/2;
-            U_c = T1 + T2 + T0/2;
-            break;
-        case 5:
-            U_a = T0/2;
-            U_b = T2 + T0/2;
-            U_c = T1 + T2 + T0/2;
-            break;
-        default:
-            // possible error state
-            U_a = 0.0f;
-            U_b = 0.0f;
-            U_c = 0.0f;
-    }
+    float_number Ualpha, Ubeta;
 
-    m_driver->set_duty(U_a, U_b, U_c);
+    arm_inv_park_f32(0, Uout, &Ualpha, &Ubeta, _park_sin, _park_cos);
+
+    float_number Ua, Ub, Uc;
+
+    // Inverse Clarke transform
+    Ua = Ualpha;
+    Uc = negtive_half * Ualpha - _SQRT3_2 * Ubeta;
+    Ub = negtive_half * Ualpha + _SQRT3_2 * Ubeta;
+
+    float_number center = _half;
+
+    float_number Umin = std::min(Ua, std::min(Ub, Uc));
+    float_number Umax = std::max(Ua, std::max(Ub, Uc));
+
+    center -= (Umax+Umin) / 2;
+    Ua += center;
+    Ub += center;
+    Uc += center;
+
+    m_driver->set_duty(Ua, Ub, Uc);
+
+		// char buf[64];
+		// int len = snprintf(buf, 64, "duty = %d, %d, %d\r\n", (int)(Ua*100), (int) (Ub * 100),(int)( Uc * 100));
+
+	  	// 	SEGGER_RTT_Write(0, buf, len);
+
 }
 
 void BLDC::pwm_callback(int pwm_freq, int perids)
 {
     if (direct_control_mode)
     {
-        set_6step(m_hall->get_sector(), 0);
         return;
     }
 
     float passed_time = (float) perids / (float) pwm_freq;
-
     auto tracked_angle = m_angle_pll->get_predict_phase(passed_time);
 
     if (!m_angle_pll->is_phase_locked())
@@ -126,10 +111,10 @@ void BLDC::pwm_callback(int pwm_freq, int perids)
 
     // update modulation based on hall state and duty
     // auto step = m_hall->get_sector();
-    int electron_angle_;
+    cyc_counter<int, 0, 360> electron_angle_;
 
     // 获取电流采样，以便限制峰值电流
-    auto current = m_cs->get_current(cur_angle, hw_duty);
+    auto current = m_cs->get_current(cur_angle, duty_with_current_limit);
     bool limit_reached = false;
 
     if (current.BusCurrent > InputCurrentLimit*1.2 )
@@ -164,28 +149,28 @@ void BLDC::pwm_callback(int pwm_freq, int perids)
     {
         // 占空比慢速跟踪用户的设定值.
         duty_with_current_limit = duty_with_current_limit * 0.95 + output_duty * 0.05;
+        if (output_duty >= 0)
+            duty_with_current_limit = std::min(duty_with_current_limit, output_duty);
+        else
+            duty_with_current_limit = std::max(duty_with_current_limit, output_duty);
     }
 
     hw_duty = std::abs(duty_with_current_limit);
 
-    if (hw_duty < 0.01)
-    { 
-        m_driver->set_duty(-1.0f, -1.0f, -1.0f);
-        return;
-    }
-    else if (output_duty > 0)
+    // set_foc(tracked_angle,duty_with_current_limit);
+    // return;
+
+    electron_angle_ = tracked_angle;
+
+    if (output_duty > 0)
     {
-        electron_angle_ = tracked_angle + 90;
-        if (electron_angle_ >= 360)
-            electron_angle_ -= 360;
+        electron_angle_ += 90;
     }
     else
     {
-        electron_angle_ = tracked_angle - 90;
-        if (electron_angle_ < 0)
-            electron_angle_ += 360;
+        electron_angle_ -= 90;
     }
+    cur_angle = tracked_angle;
 
-    // set_foc(electron_angle_,hw_duty);
-    set_6step(electron_angle_, hw_duty);
+    set_6step(electron_angle_.get_under_value(), hw_duty);
 }

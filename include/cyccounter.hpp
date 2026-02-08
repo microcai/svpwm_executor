@@ -10,11 +10,11 @@ struct cyc_counter
     static HolderType constexpr numbercount = (max - min);
     static HolderType constexpr halfcount = (numbercount)/2;
 
-    cyc_counter(){};
+    cyc_counter() : holded(min){};
     cyc_counter(HolderType init) : holded(init){}
 
     void operator ++(){
-        holded++;
+        holded+=1;
         range_fix();
     }
 
@@ -24,7 +24,7 @@ struct cyc_counter
     }
 
     void operator --(){
-        holded --;
+        holded -=1;
         range_fix();
     }
 
@@ -75,6 +75,8 @@ struct cyc_counter
     }
 
     HolderType holded;
+
+    HolderType get_under_value() const {return holded; }
 
     void range_fix()
     {

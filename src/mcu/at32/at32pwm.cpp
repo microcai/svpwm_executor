@@ -333,8 +333,9 @@ struct at32pwmdriver_impl
 		gpio_bits_set(lpwm_pins[channel].port, lpwm_pins[channel].port_cfg.gpio_pins);
 	}
 
-	void set_duty(float U_a, float U_b, float U_c)
+	void set_duty(float U_c, float U_b, float U_a)
 	{
+		m_step = -1;
 #ifdef PWM_B_BROKEN
 		U_b = -1;
 #endif
@@ -406,55 +407,74 @@ struct at32pwmdriver_impl
 
 	void set_6step(int step, float PWM)
 	{
+		bool sector_changed = m_step != step;
 		m_step = step;
 		uint32_t channel_pulse = static_cast<int>(PWM * timer_period);
 
 		switch (m_step)
 		{
-			case 0: // BA
-				set_pwm_float(2);
-				set_pwm_pwm(1);
-				set_pwm_low(0);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, channel_pulse);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
-				break;
-			case 1: // BC
-				set_pwm_float(0);
-				set_pwm_pwm(1);
-				set_pwm_low(2);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, channel_pulse);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
-				break;
-			case 2: //AC
-				set_pwm_float(1);
-				set_pwm_pwm(0);
-				set_pwm_low(2);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, channel_pulse);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
-				break;
-			case 3: // AB
-				set_pwm_float(2);
-				set_pwm_pwm(0);
-				set_pwm_low(1);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, channel_pulse);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
-				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
-				break;
-			case 4: // CB
-				set_pwm_float(0);
-				set_pwm_pwm(2);
-				set_pwm_low(1);
+			case 0: // CA
+				if (sector_changed)
+				{
+					set_pwm_float(1);
+					set_pwm_pwm(2);
+					set_pwm_low(0);
+				}
 				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
 				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
 				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, channel_pulse);
 				break;
-			case 5: // CA
-				set_pwm_float(1);
-				set_pwm_pwm(2);
-				set_pwm_low(0);
+			case 1: // BA
+				if (sector_changed)
+				{
+					set_pwm_float(2);
+					set_pwm_pwm(1);
+					set_pwm_low(0);
+				}
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, channel_pulse);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
+				break;
+			case 2: // BC
+				if (sector_changed)
+				{
+					set_pwm_float(0);
+					set_pwm_pwm(1);
+					set_pwm_low(2);
+				}
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, channel_pulse);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
+				break;
+			case 3: //AC
+				if (sector_changed)
+				{
+					set_pwm_float(1);
+					set_pwm_pwm(0);
+					set_pwm_low(2);
+				}
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, channel_pulse);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
+				break;
+			case 4: // AB
+				if (sector_changed)
+				{
+					set_pwm_float(2);
+					set_pwm_pwm(0);
+					set_pwm_low(1);
+				}
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, channel_pulse);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
+				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
+				break;
+			case 5: // CB
+				if (sector_changed)
+				{
+					set_pwm_float(0);
+					set_pwm_pwm(2);
+					set_pwm_low(1);
+				}
 				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
 				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
 				tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, channel_pulse);
@@ -463,7 +483,7 @@ struct at32pwmdriver_impl
 				set_pwm_float(0);
 				set_pwm_float(1);
 				set_pwm_float(2);
-				break;		
+				break;
 		}
 
 	}
@@ -575,7 +595,7 @@ extern "C" void TMR1_CH_IRQHandler(void)
 #endif
 {
 	static std::atomic_flag in_isr {0};
-	static __IO int missed_pwm_interrupt;
+	static __IO int missed_pwm_interrupt {0};
 	static std::atomic_flag skip_odd_intrrupt{0};
 	if(tmr_flag_get(TMR1, TMR_OVF_FLAG) != RESET)
 	{

@@ -21,6 +21,8 @@ void PLL::new_phase_arrive(int phase)
     auto raw_phase_diff = cur_raw_phase - last_raw_phase;
     auto phase_diff = cur_raw_phase - locked_phase;
     auto phase_diff_abs = std::abs(phase_diff);
+    if (time_since_last_arrive < 0.0001)
+        time_since_last_arrive = 0.001;
     auto speed_between_phase_arrive = raw_phase_diff / time_since_last_arrive;
     auto locked_phase_ = locked_phase;
 
