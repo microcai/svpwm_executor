@@ -59,7 +59,7 @@ void tmr2_eclipse_timer_init()
   tmr_cnt_dir_set(TMR2, TMR_COUNT_UP);
   tmr_clock_source_div_set(TMR2, TMR_CLOCK_DIV1);
   tmr_period_buffer_enable(TMR2, FALSE);
-  tmr_base_init(TMR2, system_core_clock, 0);
+  tmr_base_init(TMR2, system_core_clock/6, 0);
 
   tmr_counter_enable(TMR2, TRUE);
 

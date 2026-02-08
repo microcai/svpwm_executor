@@ -38,15 +38,52 @@ void BLDC::set_duty(float _output_duty)
     output_duty = _output_duty;
 }
 
-void BLDC::set_6step(float electron_angle_, float Uout)
+void BLDC::set_6step(float shaft_angle, float Uout)
 {
     using float_number = float;
 
+    cyc_counter<int, 0, 360> electron_angle_;
+
+    electron_angle_ = shaft_angle;
+
+    if (Uout > 0)
+    {
+        if (m_angle_pll->get_speed() < -1400)
+        {
+            // breaking first
+            Uout = 0;
+            electron_angle_ -= 90;
+        }
+        else
+        {
+            electron_angle_ += 90;
+        }
+
+    }
+    else if (Uout < 0)
+    {
+        if (m_angle_pll->get_speed() > 1400)
+        {
+            electron_angle_ += 90;
+            Uout = 0;
+        }
+        else
+        {
+            electron_angle_ -= 90;
+        }
+    }
+    else
+    {
+        if ( m_angle_pll->get_speed() > 0)
+            electron_angle_ += 90;
+        else if (m_angle_pll->get_speed() < 0)
+            electron_angle_ -= 90;
+    }
     // 使用 SVPWM 的方式产生 输出
     // find the sector we are in currently
-    int sector = static_cast<int>(electron_angle_ / 60);
+    int sector = static_cast<int>(electron_angle_.get_under_value() / 60);
 
-    m_driver->set_6step(sector, Uout);
+    m_driver->set_6step(sector, std::abs(Uout));
 
 }
 
@@ -109,10 +146,6 @@ void BLDC::pwm_callback(int pwm_freq, int perids)
     if (!m_angle_pll->is_phase_locked())
         tracked_angle = m_hall->get_sector() * 60;
 
-    // update modulation based on hall state and duty
-    // auto step = m_hall->get_sector();
-    cyc_counter<int, 0, 360> electron_angle_;
-
     // 获取电流采样，以便限制峰值电流
     auto current = m_cs->get_current(cur_angle, duty_with_current_limit);
     bool limit_reached = false;
@@ -157,20 +190,8 @@ void BLDC::pwm_callback(int pwm_freq, int perids)
 
     hw_duty = std::abs(duty_with_current_limit);
 
-    // set_foc(tracked_angle,duty_with_current_limit);
-    // return;
-
-    electron_angle_ = tracked_angle;
-
-    if (output_duty > 0)
-    {
-        electron_angle_ += 90;
-    }
-    else
-    {
-        electron_angle_ -= 90;
-    }
     cur_angle = tracked_angle;
 
-    set_6step(electron_angle_.get_under_value(), hw_duty);
+    // set_foc(tracked_angle,duty_with_current_limit);
+    set_6step(tracked_angle, duty_with_current_limit);
 }
