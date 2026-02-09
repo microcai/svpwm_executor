@@ -1,8 +1,11 @@
 
+#include "dsp/fast_math_functions.h"
 #if defined (BOARD_SIMULINK_BOARD)
 
 #include <Arduino.h>
 #include <USBSerial.h>
+
+#include <cstdio>
 
 #include "at32f402_405_tmr.h"
 #include "at32f402_405_wdt.h"
@@ -16,9 +19,10 @@
 #include "pins.hpp"
 
 #include "led_status.hpp"
+#include "cyccounter.hpp"
 
 #include "at32pwm.hpp"
-
+#include "debug.hpp"
 #include "mtl.hpp"
 #include "vvvf.hpp"
 #include "BLDC.hpp"
@@ -77,6 +81,8 @@ class at32_cs : public current_sense
 public:
     virtual void get_hw_current()
 	{
+    	// debug_print("at32_cs::get_hw_current enter this = %p\r\n", this);
+
 		A_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEA]);//ADC_Converted_Data_average[ADC_IDX_ISENSEA_REF];
 		B_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEB]);//ADC_Converted_Data_average[ADC_IDX_ISENSEB_REF];
 		C_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEC]);//ADC_Converted_Data_average[ADC_IDX_ISENSEC_REF];
@@ -168,7 +174,7 @@ void ADC_init()
 	adc_dma_mode_enable(ADC1, TRUE);
 
 	nvic_irq_enable(DMA1_Channel1_IRQn, 1, 1);
-	nvic_irq_enable(ADC1_IRQn, 0 , 0);
+	// nvic_irq_enable(ADC1_IRQn, 0 , 0);
 }
 
 int ttl_counter = 0;
@@ -176,6 +182,7 @@ corothread::condition_variable one_ms_interval;
 hall_sensor  tmr3_hall;
 PLL hall_pll;
 at32_cs current_sensor;
+int polar_count = 2;
 
 void interval_setup(int freq)
 {
@@ -276,7 +283,7 @@ void dc_mode_usb_reporter()
 		report_packet.DC_current *= CurrentGain;
 
 		report_packet.EncoderPos = tmr_counter_value_get(TMR3)/10000.0 * 360.0;
-		report_packet.encoder_speed = encoder_speed;
+		report_packet.encoder_speed = encoder_speed * 60;
 
 		SerialUSB.write((const uint8_t*) &report_packet, sizeof(report_packet));
 	}
@@ -290,11 +297,13 @@ void vfd_mode_usb_reporter(VVVF* vvvf)
 	{
 		uint32_t header; // header must be 'VVVF'
 		float BUS_Voltage;
+		float BUS_Current;
+		float power_factor;
 		float A_current;
 		float B_current;
 		float C_current;
 		float EncoderPos;
-		float current_angle_of_output;
+		float output_freq;
 		float encoder_speed;
 		uint32_t tail;
 	};
@@ -303,7 +312,7 @@ void vfd_mode_usb_reporter(VVVF* vvvf)
 	report_packet.tail = 0x45454545;
 	report_packet.tail = 0x7F800000;
 
-	interval_setup(1000);
+	interval_setup(500);
 
 	for(;;)
 	{
@@ -311,25 +320,16 @@ void vfd_mode_usb_reporter(VVVF* vvvf)
 
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
 		report_packet.BUS_Voltage *= VbusGain;
+		report_packet.BUS_Current = current_sensor.caculated_current.BusCurrent;
 
-		report_packet.A_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEA]);//ADC_Converted_Data_average[ADC_IDX_ISENSEA_REF];
-		report_packet.B_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEB]);//ADC_Converted_Data_average[ADC_IDX_ISENSEB_REF];
-		report_packet.C_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEC]);//ADC_Converted_Data_average[ADC_IDX_ISENSEC_REF];
+		report_packet.A_current = current_sensor.A_current;
+		report_packet.B_current = current_sensor.B_current;
+		report_packet.C_current = current_sensor.C_current;
+		report_packet.power_factor = current_sensor.caculated_current.PowerFactor;
 
-		float centor = report_packet.A_current + report_packet.B_current + report_packet.C_current;
-
-		centor /=3;
-
-		report_packet.A_current -= centor;
-		report_packet.B_current -= centor;
-		report_packet.C_current -= centor;
-		report_packet.A_current *= CurrentGain;
-		report_packet.B_current *= CurrentGain;
-		report_packet.C_current *= CurrentGain;
-
-		report_packet.current_angle_of_output = vvvf->cur_angle;
+		report_packet.output_freq = vvvf->output_freq;
 		report_packet.EncoderPos = tmr_counter_value_get(TMR3)/10000.0 * 360.0;
-		report_packet.encoder_speed = encoder_speed;
+		report_packet.encoder_speed = encoder_speed * 60;
 
 		SerialUSB.write((const uint8_t*) &report_packet, sizeof(report_packet));
 	}
@@ -375,6 +375,22 @@ void vfd_mode_usb_commander(VVVF* vvvf)
 
 				vvvf->set_v_and_f(cmd_pkt->freq, vvvf->output_freq);
 			}
+			else if (cmd_pkt->header == 0x424c4443)
+			{
+				togglePin(LED2_PIN);
+
+				auto V = std::min(cmd_pkt->freq, 1.0f);
+				auto F = std::max(3.0f, encoder_speed*polar_count * 15/11);
+
+				vvvf->set_v_and_f(V, F);
+
+				char buf[64];
+				auto len = snprintf(buf, 64, "Duty received %d, freq set to %d\r\n", (int)V,  (int)F);
+
+				SEGGER_RTT_Write(0, buf, len);
+
+			}
+
 		}
 	}
 }
@@ -521,9 +537,9 @@ void svpwm_mode_usb_reporter(BLDC* bldc)
 		report_packet.Bus_Current = current_sensor.caculated_current.BusCurrent;
 		// report_packet.BUS_Voltage = current_sensor.caculated_current.RealCurrent;
 
-		report_packet.A_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEA]);//ADC_Converted_Data_average[ADC_IDX_ISENSEA_REF];
-		report_packet.B_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEB]);//ADC_Converted_Data_average[ADC_IDX_ISENSEB_REF];
-		report_packet.C_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEC]);//ADC_Converted_Data_average[ADC_IDX_ISENSEC_REF];
+		report_packet.A_current = current_sensor.A_current;
+		report_packet.B_current = current_sensor.B_current;
+		report_packet.C_current = current_sensor.C_current;
 
 		float centor = report_packet.A_current + report_packet.B_current + report_packet.C_current;
 
@@ -571,6 +587,9 @@ void setup()
 	crm_periph_clock_enable(CRM_GPIOD_PERIPH_CLOCK, TRUE);
 	crm_periph_clock_enable(CRM_GPIOC_PERIPH_CLOCK, TRUE);
 	crm_periph_clock_enable(CRM_SCFG_PERIPH_CLOCK, TRUE);
+	crm_periph_clock_enable(CRM_TMR2_PERIPH_CLOCK, TRUE);
+	crm_periph_clock_enable(CRM_TMR1_PERIPH_CLOCK, TRUE);
+	crm_periph_clock_enable(CRM_TMR3_PERIPH_CLOCK, TRUE);
 
 	scfg_exint_line_config(SCFG_PORT_SOURCE_GPIOC, SCFG_PINS_SOURCE8);
 
@@ -612,6 +631,7 @@ void setup()
 
 	// init USB CDC
 	SerialUSB.begin();
+  	SEGGER_RTT_WriteString(0, "USB cdc init\r\n");
 
 	digitalWrite_HIGH(GATE_EN_PIN);
 
@@ -621,12 +641,16 @@ void setup()
 
 	#if BOARD_MODE == 1
 		encoder_tmr3_init();
+		SEGGER_RTT_WriteString(0, "ABZ encoder init\r\n");
 		pinMode(PC8, INPUT);
 		exint_init(&exint_init_struct);
-		nvic_irq_enable(EXINT9_5_IRQn, 0, 1);
-		VVVF * vvvf = new VVVF(pwm_driver);
+		nvic_irq_enable(EXINT9_5_IRQn, 1, 1);
+		VVVF * vvvf = new VVVF(pwm_driver, &current_sensor);
 		corothread::create_static_context(&reporter_thread_ctx, callable(&vfd_mode_usb_reporter, vvvf));
+		SEGGER_RTT_WriteString(0, "vfd_mode_usb_reporter thread created\r\n");
 		corothread::create_static_context(&commander_thread_ctx, callable(&vfd_mode_usb_commander, vvvf));
+		SEGGER_RTT_WriteString(0, "vfd_mode_usb_commander thread created\r\n");
+
 	#elif BOARD_MODE == 0
 		encoder_tmr3_init();
 		pinMode(PC8, INPUT);
@@ -654,7 +678,9 @@ void setup()
 void loop()
 {
 	wdt_counter_reload();
+	// SEGGER_RTT_WriteString(0, "loop() begin\r\n");
 	mcucoro::executor::system_executor().poll();
+	// SEGGER_RTT_WriteString(0, "loop() executed\r\n");
 }
 
 extern "C" void DMA1_Channel1_IRQHandler(void)
@@ -707,9 +733,11 @@ extern "C" void TMR3_GLOBAL_IRQHandler()
   if(tmr_interrupt_flag_get(TMR3, TMR_TRIGGER_FLAG) == SET)
   {
 	ttl_counter = 0;
+#if BOARD_MODE == 2
 	tmr3_hall.hal_irq_handle();
 	get_eclipsed_and_reset();
 	hall_pll.new_phase_arrive(tmr3_hall.get_sector() * 60);
+#endif
     tmr_flag_clear(TMR3, TMR_TRIGGER_FLAG);
 
 	// char buf[64];
@@ -743,7 +771,7 @@ extern "C" void TMR6_GLOBAL_IRQHandler(void)
 
 	// 首先判定旋转方向.
 	int delta_angle = angle_diff<10000>(value, pre_value);
-	encoder_speed = delta_angle / 10000.0 * 60 * 500;
+	encoder_speed = delta_angle / 10000.0 * 500;
 
 	pre_value = value;
 

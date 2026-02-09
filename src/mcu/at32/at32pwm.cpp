@@ -169,7 +169,7 @@ struct at32pwmdriver_impl
 			GPIO_DRIVE_STRENGTH_STRONGER				
 		},
 		GPIO_PINS_SOURCE12,
-		GPIO_MUX_1			
+		GPIO_MUX_2			
 	};
 
 	at32pwmdriver_impl(at32pwmdriver* parent)
@@ -182,10 +182,14 @@ struct at32pwmdriver_impl
 		crm_periph_clock_enable(CRM_GPIOB_PERIPH_CLOCK, TRUE);
 
 		port_setup(hpwm_pins[0]);
+#ifndef PWM_B_BROKEN
 		port_setup(hpwm_pins[1]);
+#endif
 		port_setup(hpwm_pins[2]);
 		port_setup(lpwm_pins[0]);
+#ifndef PWM_B_BROKEN
 		port_setup(lpwm_pins[1]);
+#endif
 		port_setup(lpwm_pins[2]);
 
 		port_setup(brk_pin);
@@ -232,17 +236,6 @@ struct at32pwmdriver_impl
 		tmr_brkdt_default_para_init(&tmr_brkdt_config_struct);
 
 #ifdef USE_BREAK
-		{
-			gpio_init_type  gpio_init_struct = {
-				.gpio_pins = GPIO_PINS_12,
-				.gpio_out_type = GPIO_OUTPUT_OPEN_DRAIN,
-				.gpio_pull = GPIO_PULL_UP,
-				.gpio_mode = GPIO_MODE_MUX,
-				.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER,
-			};
-			gpio_init(GPIOB, &gpio_init_struct);
-			gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE12, GPIO_MUX_2);
-		}
 		tmr_brkdt_config_struct.brk_enable = TRUE;
 #else
 		tmr_brkdt_config_struct.brk_enable = FALSE;
@@ -264,9 +257,6 @@ struct at32pwmdriver_impl
 
 		tmr_period_buffer_enable(tmr, TRUE);
 
-		tmr_interrupt_enable(tmr, TMR_OVF_INT, TRUE);
-		tmr_interrupt_enable(TMR1, TMR_BRK_INT, TRUE);
-
 		set_frequency(pwm_frequency);
 
 		tmr_channel_enable(tmr, TMR_SELECT_CHANNEL_4, TRUE);
@@ -274,16 +264,20 @@ struct at32pwmdriver_impl
 
 		tmr_output_enable(tmr, TRUE);
 		tmr_counter_enable(tmr, TRUE);
+
+		_g_instance = this;
+
 		start();
 
 		#ifdef AT32F421
   		nvic_irq_enable(TMR1_CH_IRQn, 0, 0);
 		#else
-  		nvic_irq_enable(TMR1_OVF_TMR10_IRQn, 0, 1);
+  		nvic_irq_enable(TMR1_OVF_TMR10_IRQn, 1, 1);
 		nvic_irq_enable(TMR1_BRK_TMR9_IRQn, 0, 0);
 		#endif
 
-		_g_instance = this;
+		tmr_interrupt_enable(tmr, TMR_OVF_INT, TRUE);
+		tmr_interrupt_enable(TMR1, TMR_BRK_INT, TRUE);
 
 		set_duty(-1, -1, -1);
 	}
@@ -304,7 +298,7 @@ struct at32pwmdriver_impl
 
 	void set_pwm_pwm(int channel)
 	{
-		gpio_init(hpwm_pins[channel].port, &hpwm_pins[channel].port_cfg);
+		port_setup(hpwm_pins[channel]);
 
 		gpio_init_type pwm_float_set = lpwm_pins[channel].port_cfg;
 		pwm_float_set.gpio_mode = GPIO_MODE_OUTPUT;
@@ -315,8 +309,8 @@ struct at32pwmdriver_impl
 
 	void set_pwm_cpwm(int channel)
 	{
-		gpio_init(hpwm_pins[channel].port, &hpwm_pins[channel].port_cfg);
-		gpio_init(lpwm_pins[channel].port, &lpwm_pins[channel].port_cfg);
+		port_setup(hpwm_pins[channel]);
+		port_setup(lpwm_pins[channel]);
 	}
 
 	void set_pwm_low(int channel)
@@ -510,8 +504,6 @@ struct at32pwmdriver_impl
 		tmr_channel_enable(tmr, TMR_SELECT_CHANNEL_2C, TRUE);
 		tmr_channel_enable(tmr, TMR_SELECT_CHANNEL_3C, TRUE);
 
-		set_duty(0, 0, 0);
-
 		tmr_interrupt_enable(TMR1, TMR_BRK_INT, TRUE);
 		tmr_output_enable(tmr, TRUE);
 	}
@@ -606,7 +598,8 @@ extern "C" void TMR1_CH_IRQHandler(void)
 				int missed_pwm_interrupt_ = missed_pwm_interrupt;
 				missed_pwm_interrupt = 0;
 				tmr_flag_clear(TMR1, TMR_OVF_FLAG);
-				_g_instance->tmr1_interrupt(missed_pwm_interrupt_ + 1);
+				if (_g_instance)
+					_g_instance->tmr1_interrupt(missed_pwm_interrupt_ + 1);
 				in_isr.clear();
 			}
 			else
@@ -624,7 +617,7 @@ extern "C" void TMR1_CH_IRQHandler(void)
 	}
 }
 
-void TMR1_BRK_TMR9_IRQHandler(void)
+extern "C" void TMR1_BRK_TMR9_IRQHandler(void)
 {
   	/* TMR9_CH1 toggling with frequency = 366.2 Hz */
 	if (tmr_interrupt_flag_get(TMR1, TMR_BRK_FLAG) != RESET)
