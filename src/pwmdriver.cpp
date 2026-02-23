@@ -20,7 +20,7 @@ void pwmdriver::link_timer(pwm_callback_ptr cb, void* _user_data)
 void pwmdriver::unlink_timer()
 {
     this->callback_ptr = nullptr;
-    this->callback_ptr_user_data = nullptr;    
+    this->callback_ptr_user_data = nullptr;
 }
 
 void pwmdriver::invoke_callbacks(int pwm, int perids)

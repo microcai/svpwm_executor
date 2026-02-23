@@ -18,48 +18,93 @@ extern float sin_of_degree(float degree);
 
 void VVVF::set_foc(float shaft_angle, float Uout)
 {
-    Uout *= 0.57735;
-
     using float_number = float;
+    int sector = (int)shaft_angle / 60;
 
-    float_number _park_sin, _park_cos;
+    static const float_number sector_angle[]
+        = { float_number(0), float_number(60), float_number(120), float_number(180), float_number(240), float_number(300), float_number(360) };
 
-    static constexpr float_number negtive_half{-0.5};
-    static constexpr float_number _half{0.5};
-    static constexpr float_number _SQRT3_2{0.86602540378443864676372317075294};
+    auto angle_in_sector = shaft_angle - sector_angle[sector];
 
-    arm_sin_cos_f32(shaft_angle, &_park_sin, &_park_cos);
+    float_number T1 = Uout * sin_of_degree(60 - angle_in_sector);
+    float_number T2 = Uout * sin_of_degree(angle_in_sector);
+    float_number T0 = 1.0f - T1 - T2;
 
-    float_number Ualpha, Ubeta;
+    float_number Ta, Tb, Tc;
+    switch(sector)
+    {
+    case 0:
+        Ta = T1 + T2 + T0/2;
+        Tb = T2 + T0/2;
+        Tc = T0/2;
+        break;
+    case 1:
+        Ta = T1 +  T0/2;
+        Tb = T1 + T2 + T0/2;
+        Tc = T0/2;
+        break;
+    case 2:
+        Ta = T0/2;
+        Tb = T1 + T2 + T0/2;
+        Tc = T2 + T0/2;
+        break;
+    case 3:
+        Ta = T0/2;
+        Tb = T1+ T0/2;
+        Tc = T1 + T2 + T0/2;
+        break;
+    case 4:
+        Ta = T2 + T0/2;
+        Tb = T0/2;
+        Tc = T1 + T2 + T0/2;
+        break;
+    case 5:
+        Ta = T1 + T2 + T0/2;
+        Tb = T0/2;
+        Tc = T1 + T0/2;
+        break;
+    default:
+        // possible error state
+        Ta = 0;
+        Tb = 0;
+        Tc = 0;
+    }
 
-    arm_inv_park_f32(0, Uout, &Ualpha, &Ubeta, _park_sin, _park_cos);
+    output_A = Ta;
+    output_B = Tb;
+    output_C = Tc;
 
-    float_number Ua, Ub, Uc;
+    m_driver->set_duty(Ta, Tb, Tc);
 
-    // Inverse Clarke transform
-    Ua = Ualpha;
-    Uc = negtive_half * Ualpha - _SQRT3_2 * Ubeta;
-    Ub = negtive_half * Ualpha + _SQRT3_2 * Ubeta;
+    // char buf[64];
+    // int len = snprintf(buf, 64, "duty = %d, %d, %d\r\n", (int)(Ua*100), (int) (Ub * 100),(int)( Uc * 100));
 
-    float_number center = _half;
-
-    float_number Umin = std::min(Ua, std::min(Ub, Uc));
-    float_number Umax = std::max(Ua, std::max(Ub, Uc));
-
-    center -= (Umax+Umin) / 2;
-    Ua += center;
-    Ub += center;
-    Uc += center;
-
-    m_driver->set_duty(Ua, Ub, Uc);
-
-		// char buf[64];
-		// int len = snprintf(buf, 64, "duty = %d, %d, %d\r\n", (int)(Ua*100), (int) (Ub * 100),(int)( Uc * 100));
-
-	  	// 	SEGGER_RTT_Write(0, buf, len);
-
+    // 	SEGGER_RTT_Write(0, buf, len);
 }
 
+void VVVF::loop()
+{
+    if (m_driver->break_status == 1)
+    {
+        if (break_ttl == 0)
+        {
+            m_driver->stop();
+            break_ttl = 1000;
+        }
+        // wait for some minit to re-start();
+        m_driver->break_status = 0;
+    }
+
+    if (break_ttl)
+    {
+        if ( --break_ttl ==0)
+        {
+            m_driver->start();
+        }
+    }
+
+    // estimate slip rate
+}
 
 void VVVF::pwm_callback(int pwm_freq, int perids)
 {
@@ -98,7 +143,7 @@ void VVVF::pwm_callback(int pwm_freq, int perids)
         limit_reached = true;
         duty_with_current_limit *= 0.98;
     }
-    
+
     if (!limit_reached)
     {
         // 占空比慢速跟踪用户的设定值.
@@ -113,7 +158,7 @@ void VVVF::pwm_callback(int pwm_freq, int perids)
     cur_angle += passed_time * output_freq * 360;
 
     // normalize angle
-    while (cur_angle > 360)
+    while (cur_angle >= 360)
         cur_angle -= 360;
     while (cur_angle < 0)
         cur_angle += 360;

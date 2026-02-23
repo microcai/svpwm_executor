@@ -15,11 +15,14 @@ public:
     // set pwm [-1, 1], let system to do slip control to determine the freq
     void set_duty(float duty);
 
+    void loop();
+
 protected:
     void pwm_callback(int, int);
     void set_foc(float shaft_angle, float Uout);
 
     motorlib::pwmdriver* m_driver;
+    long break_ttl = 0;
     current_sense* m_cs;
     float duty_with_current_limit = 1;
 public:
@@ -29,4 +32,5 @@ public:
     float cur_angle = 0;
     float output_freq = 0;
     float output_duty = 0;
+    float output_A, output_B, output_C;
 };

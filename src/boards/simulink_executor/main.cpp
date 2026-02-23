@@ -1,14 +1,20 @@
 
-#include "dsp/fast_math_functions.h"
+
 #if defined (BOARD_SIMULINK_BOARD)
+
+#include <initializer_list>
 
 #include <Arduino.h>
 #include <USBSerial.h>
 
 #include <cstdio>
 
+#include "at32f402_405.h"
 #include "at32f402_405_tmr.h"
 #include "at32f402_405_wdt.h"
+
+#include "dsp/fast_math_functions.h"
+#include "dsp/filtering_functions.h"
 
 #include "dros/mcu_coro.hpp"
 #include "dros/coro_condvar.hpp"
@@ -32,8 +38,11 @@
 
 #include "SEGGER_RTT.h"
 
-#define CurrentGain 0.0183150183150183
 #define VbusGain 0.0117948717948718
+
+float CurrentGainA = 0.0183150183150183 * 1.1;
+float CurrentGainB = 0.0183150183150183;
+float CurrentGainC = 0.0183150183150183;
 
 template<typename T=float>
 T clamp(T v, T min, T max)
@@ -48,22 +57,22 @@ T clamp(T v, T min, T max)
 
 mtl::static_store<motorlib::at32pwmdriver> driver_store;
 
-static uint16_t ADC_Converted_Data_average[10] = { 0 };
-static __IO uint16_t ADC_Converted_Data[10] = { 0 };
+static uint16_t ADC_Converted_Data_average[7] = { 0 };
+static __IO int ADC_Converted_Data[7] = { 0 };
 
-#define ADC_IDX_ISENSEA 0
-#define ADC_IDX_ISENSEA_REF 1
+#define ADC_IDX_ISENSEA 1
+#define ADC_IDX_ISENSEA_REF 4
 #define ADC_IDX_ISENSEB 2
-#define ADC_IDX_ISENSEB_REF  3
+#define ADC_IDX_ISENSEB_REF  5
 
-#define ADC_IDX_ISENSEC 4
-#define ADC_IDX_ISENSEC_REF  5
+#define ADC_IDX_ISENSEC 3
+#define ADC_IDX_ISENSEC_REF  6
 
-#define ADC_IDX_C_OUT 6
-#define ADC_IDX_B_OUT 7
-#define ADC_IDX_A_OUT 8
+// #define ADC_IDX_C_OUT 7
+// #define ADC_IDX_B_OUT 8
+// #define ADC_IDX_A_OUT 9
 
-#define ADC_IDX_VBUS  9
+#define ADC_IDX_VBUS  0
 
 static inline int max(int a, int b, int c)
 {
@@ -75,6 +84,9 @@ static inline int max(int a, int b, int c)
 	return max;
 }
 
+#define sqrt3 1.717f
+
+#include "mat.hpp"
 
 class at32_cs : public current_sense
 {
@@ -82,21 +94,29 @@ public:
     virtual void get_hw_current()
 	{
     	// debug_print("at32_cs::get_hw_current enter this = %p\r\n", this);
+		// int A_centor = ADC_Converted_Data_average[ADC_IDX_ISENSEA_REF];// - ADC_Converted_Data_average[ADC_IDX_ISENSEA_REF];
+		// int B_centor = ADC_Converted_Data_average[ADC_IDX_ISENSEB_REF];// - ADC_Converted_Data_average[ADC_IDX_ISENSEB_REF];
+		// int C_centor = ADC_Converted_Data_average[ADC_IDX_ISENSEC_REF];// - ADC_Converted_Data_average[ADC_IDX_ISENSEC_REF];
 
-		A_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEA]);//ADC_Converted_Data_average[ADC_IDX_ISENSEA_REF];
-		B_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEB]);//ADC_Converted_Data_average[ADC_IDX_ISENSEB_REF];
-		C_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEC]);//ADC_Converted_Data_average[ADC_IDX_ISENSEC_REF];
+		auto _A_current = ADC_Converted_Data[ADC_IDX_ISENSEA] - ADC_Converted_Data[ADC_IDX_ISENSEA_REF];
+		auto _B_current = ADC_Converted_Data[ADC_IDX_ISENSEB] - ADC_Converted_Data[ADC_IDX_ISENSEB_REF];
+		auto _C_current = ADC_Converted_Data[ADC_IDX_ISENSEC] - ADC_Converted_Data[ADC_IDX_ISENSEC_REF];
 
-		float centor = A_current + B_current + C_current;
+		// CurrentGainB *= (1 - delta_offset/_B_current );
+		// CurrentGainC *= (1 - delta_offset/_C_current );
+		// centor /=3;
 
-		centor /=3;
+		// _A_current -= delta_offset;
+		// _B_current -= delta_offset;
+		// _C_current -= delta_offset;
 
-		A_current -= centor;
-		B_current -= centor;
-		C_current -= centor;
-		A_current *= CurrentGain;
-		B_current *= CurrentGain;
-		C_current *= CurrentGain;
+		A_current = A_lpf(_A_current * CurrentGainA);
+		B_current = B_lpf(_B_current * CurrentGainB);
+		C_current = C_lpf(_C_current * CurrentGainC);
+		// A_current = 0.0f - B_current - C_current;
+
+		return;
+
 	}
 
 };
@@ -108,6 +128,7 @@ void ADC_init()
 	crm_periph_clock_enable(CRM_GPIOA_PERIPH_CLOCK, TRUE);
 	crm_periph_clock_enable(CRM_GPIOC_PERIPH_CLOCK, TRUE);
 	crm_periph_clock_enable(CRM_DMA1_PERIPH_CLOCK, TRUE);
+	crm_periph_clock_enable(CRM_ADC1_PERIPH_CLOCK, TRUE);
 
 	gpio_default_para_init(&gpio_initstructure);
 	gpio_initstructure.gpio_mode = GPIO_MODE_ANALOG;
@@ -122,12 +143,12 @@ void ADC_init()
 	dma_init_struct.buffer_size = sizeof(ADC_Converted_Data)/sizeof(ADC_Converted_Data[0]);
 	dma_init_struct.direction = DMA_DIR_PERIPHERAL_TO_MEMORY;
 	dma_init_struct.memory_base_addr = (uint32_t)ADC_Converted_Data;
-	dma_init_struct.memory_data_width = DMA_MEMORY_DATA_WIDTH_HALFWORD;
+	dma_init_struct.memory_data_width = DMA_MEMORY_DATA_WIDTH_WORD;
 	dma_init_struct.memory_inc_enable = TRUE;
 	dma_init_struct.peripheral_base_addr = (uint32_t)&(ADC1->odt);
 	dma_init_struct.peripheral_data_width = DMA_PERIPHERAL_DATA_WIDTH_HALFWORD;
 	dma_init_struct.peripheral_inc_enable = FALSE;
-	dma_init_struct.priority = DMA_PRIORITY_VERY_HIGH;
+	dma_init_struct.priority = DMA_PRIORITY_LOW;
 	dma_init_struct.loop_mode_enable = TRUE;
 	dma_init(DMA1_CHANNEL1, &dma_init_struct);
 	dmamux_enable(DMA1, TRUE);
@@ -144,36 +165,35 @@ void ADC_init()
 	adc_clock_div_set(ADC_DIV_8);
 
 	adc_base_struct.sequence_mode = TRUE;
-	adc_base_struct.repeat_mode = TRUE;
+	adc_base_struct.repeat_mode = FALSE;
 	adc_base_struct.data_align = ADC_RIGHT_ALIGNMENT;
-	adc_base_struct.ordinary_channel_length = dma_init_struct.buffer_size;
+	adc_base_struct.ordinary_channel_length = sizeof(ADC_Converted_Data)/sizeof(ADC_Converted_Data[0]);
 	adc_base_config(ADC1, &adc_base_struct);
+
 	// ADC_isense abc
-	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_0, 1, ADC_SAMPLETIME_1_5);
-	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_1, 2, ADC_SAMPLETIME_1_5);
-	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_2, 3, ADC_SAMPLETIME_1_5);
-	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_3, 4, ADC_SAMPLETIME_1_5);
-	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_4, 5, ADC_SAMPLETIME_1_5);
-	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_5, 6, ADC_SAMPLETIME_1_5);
+	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_13, 1, ADC_SAMPLETIME_1_5);
+
+	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_0, 2, ADC_SAMPLETIME_7_5);
+	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_2, 3, ADC_SAMPLETIME_7_5);
+	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_4, 4, ADC_SAMPLETIME_7_5);
+
+	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_1, 5, ADC_SAMPLETIME_7_5);
+	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_3, 6, ADC_SAMPLETIME_7_5);
+	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_5, 7, ADC_SAMPLETIME_7_5);
 
 	// ADC_vsense abc bus
-	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_10, 7, ADC_SAMPLETIME_1_5);
-	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_11, 8, ADC_SAMPLETIME_1_5);
-	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_12, 9, ADC_SAMPLETIME_1_5);
-	adc_ordinary_channel_set(ADC1, ADC_CHANNEL_13, 10, ADC_SAMPLETIME_1_5);
+	// adc_ordinary_channel_set(ADC1, ADC_CHANNEL_10, 8, ADC_SAMPLETIME_1_5);
+	// adc_ordinary_channel_set(ADC1, ADC_CHANNEL_11, 9, ADC_SAMPLETIME_1_5);
+	// adc_ordinary_channel_set(ADC1, ADC_CHANNEL_12, 10, ADC_SAMPLETIME_1_5);
 
-	adc_ordinary_conversion_trigger_set(ADC1, ADC12_ORDINARY_TRIG_TMR1CH4, TRUE);
+	adc_ordinary_conversion_trigger_set(ADC1, ADC12_ORDINARY_TRIG_TMR1TRGOUT, TRUE);
+	adc_dma_mode_enable(ADC1, TRUE);
 
 	adc_enable(ADC1, TRUE);
 	delay_ms(50);
-	adc_calibration_init(ADC1);
-	while(adc_calibration_init_status_get(ADC1));
-	adc_calibration_start(ADC1);
-	while(adc_calibration_status_get(ADC1));
 
-	adc_dma_mode_enable(ADC1, TRUE);
-
-	nvic_irq_enable(DMA1_Channel1_IRQn, 1, 1);
+	nvic_irq_enable(DMA1_Channel1_IRQn, 1, 3);
+	dma_interrupt_enable(DMA1_CHANNEL1, DMA_FDT_INT, TRUE);
 	// nvic_irq_enable(ADC1_IRQn, 0 , 0);
 }
 
@@ -183,6 +203,11 @@ hall_sensor  tmr3_hall;
 PLL hall_pll;
 at32_cs current_sensor;
 int polar_count = 2;
+
+void normal_adc_handle()
+{
+	current_sensor.get_hw_current();
+}
 
 void interval_setup(int freq)
 {
@@ -280,7 +305,7 @@ void dc_mode_usb_reporter()
 		report_packet.BUS_Voltage = ADC_Converted_Data[ADC_IDX_VBUS];
 		report_packet.BUS_Voltage *= VbusGain;
 		report_packet.DC_current = static_cast<float>(ADC_Converted_Data[ADC_IDX_ISENSEA]) - ADC_Converted_Data_average[ADC_IDX_ISENSEA];
-		report_packet.DC_current *= CurrentGain;
+		report_packet.DC_current *= CurrentGainA;
 
 		report_packet.EncoderPos = tmr_counter_value_get(TMR3)/10000.0 * 360.0;
 		report_packet.encoder_speed = encoder_speed * 60;
@@ -299,9 +324,14 @@ void vfd_mode_usb_reporter(VVVF* vvvf)
 		float BUS_Voltage;
 		float BUS_Current;
 		float power_factor;
+		float Id, Iq;
 		float A_current;
 		float B_current;
 		float C_current;
+		float A_duty;
+		float B_duty;
+		float C_duty;
+
 		float EncoderPos;
 		float output_freq;
 		float encoder_speed;
@@ -326,12 +356,20 @@ void vfd_mode_usb_reporter(VVVF* vvvf)
 		report_packet.B_current = current_sensor.B_current;
 		report_packet.C_current = current_sensor.C_current;
 		report_packet.power_factor = current_sensor.caculated_current.PowerFactor;
+		report_packet.Id = current_sensor.caculated_current.ReactiveCurrent;
+		report_packet.Iq = current_sensor.caculated_current.RealCurrent;
 
 		report_packet.output_freq = vvvf->output_freq;
 		report_packet.EncoderPos = tmr_counter_value_get(TMR3)/10000.0 * 360.0;
 		report_packet.encoder_speed = encoder_speed * 60;
 
+		report_packet.A_duty = vvvf->output_A;
+		report_packet.B_duty = vvvf->output_B;
+		report_packet.C_duty = vvvf->output_C;
+
 		SerialUSB.write((const uint8_t*) &report_packet, sizeof(report_packet));
+
+		vvvf->loop();
 	}
 }
 
@@ -380,7 +418,7 @@ void vfd_mode_usb_commander(VVVF* vvvf)
 				togglePin(LED2_PIN);
 
 				auto V = std::min(cmd_pkt->freq, 1.0f);
-				auto F = std::max(3.0f, encoder_speed*polar_count * 15/11);
+				auto F = std::max(0.6f, encoder_speed*polar_count * 15/11);
 
 				vvvf->set_v_and_f(V, F);
 
@@ -430,7 +468,7 @@ void hall_study(BLDC* bldc)
 			tmr3_hall.update_sector_hall_map(tmr3_hall.hall_state,  (i) / 60);
 		}
 	}
-		
+
 	int len = snprintf(buf, 64, "hall map = [%d, %d, %d, %d, %d, %d]\r\n", 
 		tmr3_hall.m_hall_to_sector_map[1],
 		tmr3_hall.m_hall_to_sector_map[2],
@@ -498,11 +536,11 @@ void svpwm_mode_usb_commander(BLDC* bldc)
 				bldc->set_duty(clamp(cmd_pkt->duty, -1.0f, 1.0f));
 			}
 		}
-		
+
 		if (command_last_received > 1000)
 		{
 			bldc->set_duty(-1.0f,-1.0f, -1.0f);
-		}			
+		}
 	}
 }
 
@@ -541,17 +579,6 @@ void svpwm_mode_usb_reporter(BLDC* bldc)
 		report_packet.B_current = current_sensor.B_current;
 		report_packet.C_current = current_sensor.C_current;
 
-		float centor = report_packet.A_current + report_packet.B_current + report_packet.C_current;
-
-		centor /=3;
-
-		report_packet.A_current -= centor;
-		report_packet.B_current -= centor;
-		report_packet.C_current -= centor;
-		report_packet.A_current *= CurrentGain;
-		report_packet.B_current *= CurrentGain;
-		report_packet.C_current *= CurrentGain;
-
 		report_packet.pos_by_hall = tmr3_hall.get_sector() * 60;
 		report_packet.erpm = hall_pll.get_speed();
 
@@ -559,8 +586,28 @@ void svpwm_mode_usb_reporter(BLDC* bldc)
 	}
 }
 
-static __IO uint32_t ADC_Converted_Data_sum[8] = { 0 };
-static __IO uint32_t ADC_Convert_count = 0;
+static __IO uint32_t ADC_Converted_Data_sum[10] = { 0 };
+static __IO int ADC_Convert_count = -15000;
+
+void pre_adc_sum_handle()
+{
+	if (ADC_Convert_count >=0)
+	{
+		// 累加 ADC 结果.
+		for (int i=0; i < sizeof(ADC_Converted_Data)/sizeof(ADC_Converted_Data[0]) ; i++)
+		{
+			ADC_Converted_Data_sum[i] += ADC_Converted_Data[i];
+		}
+	}
+
+	++ADC_Convert_count;
+}
+
+typedef void (*ADC_Handle_t)();
+
+
+
+static ADC_Handle_t ADC_handle = nullptr;
 
 static corothread::thread_context reporter_thread_ctx;
 static corothread::thread_context commander_thread_ctx;
@@ -611,23 +658,37 @@ void setup()
 	digitalWrite_HIGH(LED3_PIN);
 
 	// can_config();
+	ADC_handle = &pre_adc_sum_handle;
 	ADC_init();
-
-	dma_interrupt_enable(DMA1_CHANNEL1, DMA_FDT_INT, TRUE);
+	adc_ordinary_conversion_trigger_set(ADC1, ADC12_ORDINARY_TRIG_SOFTWARE, TRUE);
 
 	auto pwm_driver = new (driver_store.address())  motorlib::at32pwmdriver();
 
+	pwm_driver->set_duty(0,0,0);
 	pwm_driver->start();
+	dma_interrupt_enable(DMA1_CHANNEL1, DMA_FDT_INT, TRUE);
 
 	// 电流采样找 0.
 	delay(150);
+
+	while(ADC_Convert_count < 25000)
+	{
+		adc_ordinary_software_trigger_enable(ADC1, TRUE);
+		while(adc_ordinary_software_trigger_status_get(ADC1));
+	}
+
 	dma_interrupt_enable(DMA1_CHANNEL1, DMA_FDT_INT, FALSE);
+
 	delay(1);
 
 	for (int i=0; i < sizeof(ADC_Converted_Data)/sizeof(ADC_Converted_Data[0]) ; i++)
 	{
-		ADC_Converted_Data_average[i] = ADC_Converted_Data_sum[i]/(ADC_Convert_count - 5000);
+		ADC_Converted_Data_average[i] = ADC_Converted_Data_sum[i]/(ADC_Convert_count);
 	}
+
+	ADC_handle = &normal_adc_handle;
+	adc_ordinary_conversion_trigger_set(ADC1, ADC12_ORDINARY_TRIG_TMR1CH4, TRUE);
+	dma_interrupt_enable(DMA1_CHANNEL1, DMA_FDT_INT, TRUE);
 
 	// init USB CDC
 	SerialUSB.begin();
@@ -664,7 +725,7 @@ void setup()
 		tmr2_eclipse_timer_init();
 		hall_tmr3_init();
 		tmr3_hall.hal_irq_handle();
-		
+
 		BLDC * bldc = new BLDC(pwm_driver, &tmr3_hall, &hall_pll, &current_sensor);
 		corothread::create_static_context(&reporter_thread_ctx, callable(&svpwm_mode_usb_reporter, bldc));
 		corothread::create_static_context(&commander_thread_ctx, callable(&svpwm_mode_usb_commander, bldc));
@@ -687,18 +748,8 @@ extern "C" void DMA1_Channel1_IRQHandler(void)
 {
 	if(dma_interrupt_flag_get(DMA1_FDT1_FLAG) != RESET)
 	{
+		ADC_handle();
 		dma_flag_clear(DMA1_FDT1_FLAG);
-
-		if (ADC_Convert_count >=5000)
-		{
-			// 累加 ADC 结果.
-			for (int i=0; i < sizeof(ADC_Converted_Data)/sizeof(ADC_Converted_Data[0]) ; i++)
-			{
-				ADC_Converted_Data_sum[i] += ADC_Converted_Data[i];
-			}
-		}
-
-		++ADC_Convert_count;
 	}
 }
 

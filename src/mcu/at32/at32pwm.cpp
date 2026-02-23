@@ -90,7 +90,7 @@ struct at32pwmdriver_impl
 				GPIO_OUTPUT_PUSH_PULL,
 				GPIO_PULL_NONE,
 				GPIO_MODE_MUX,
-				GPIO_DRIVE_STRENGTH_STRONGER				
+				GPIO_DRIVE_STRENGTH_STRONGER
 			},
 			GPIO_PINS_SOURCE8,
 			GPIO_MUX_1
@@ -102,7 +102,7 @@ struct at32pwmdriver_impl
 				GPIO_OUTPUT_PUSH_PULL,
 				GPIO_PULL_NONE,
 				GPIO_MODE_MUX,
-				GPIO_DRIVE_STRENGTH_STRONGER				
+				GPIO_DRIVE_STRENGTH_STRONGER
 			},
 			GPIO_PINS_SOURCE9,
 			GPIO_MUX_1
@@ -114,10 +114,10 @@ struct at32pwmdriver_impl
 				GPIO_OUTPUT_PUSH_PULL,
 				GPIO_PULL_NONE,
 				GPIO_MODE_MUX,
-				GPIO_DRIVE_STRENGTH_STRONGER				
+				GPIO_DRIVE_STRENGTH_STRONGER
 			},
 			GPIO_PINS_SOURCE10,
-			GPIO_MUX_1			
+			GPIO_MUX_1
 		}
 	};
 	pin_config lpwm_pins[3] = {
@@ -128,10 +128,10 @@ struct at32pwmdriver_impl
 				GPIO_OUTPUT_PUSH_PULL,
 				GPIO_PULL_NONE,
 				GPIO_MODE_MUX,
-				GPIO_DRIVE_STRENGTH_STRONGER				
+				GPIO_DRIVE_STRENGTH_STRONGER
 			},
 			GPIO_PINS_SOURCE7,
-			GPIO_MUX_1			
+			GPIO_MUX_1
 		},
 		{
 			GPIOB,
@@ -140,10 +140,10 @@ struct at32pwmdriver_impl
 				GPIO_OUTPUT_PUSH_PULL,
 				GPIO_PULL_NONE,
 				GPIO_MODE_MUX,
-				GPIO_DRIVE_STRENGTH_STRONGER				
+				GPIO_DRIVE_STRENGTH_STRONGER
 			},
 			GPIO_PINS_SOURCE0,
-			GPIO_MUX_1			
+			GPIO_MUX_1
 		},
 		{
 			GPIOB,
@@ -152,10 +152,10 @@ struct at32pwmdriver_impl
 				GPIO_OUTPUT_PUSH_PULL,
 				GPIO_PULL_NONE,
 				GPIO_MODE_MUX,
-				GPIO_DRIVE_STRENGTH_STRONGER				
+				GPIO_DRIVE_STRENGTH_STRONGER
 			},
 			GPIO_PINS_SOURCE1,
-			GPIO_MUX_1			
+			GPIO_MUX_1
 		}
 	};
 
@@ -166,10 +166,10 @@ struct at32pwmdriver_impl
 			GPIO_OUTPUT_OPEN_DRAIN,
 			GPIO_PULL_UP,
 			GPIO_MODE_MUX,
-			GPIO_DRIVE_STRENGTH_STRONGER				
+			GPIO_DRIVE_STRENGTH_STRONGER
 		},
 		GPIO_PINS_SOURCE12,
-		GPIO_MUX_2			
+		GPIO_MUX_1
 	};
 
 	at32pwmdriver_impl(at32pwmdriver* parent)
@@ -218,9 +218,12 @@ struct at32pwmdriver_impl
 		tmr_output_struct_normal.occ_output_state = TRUE;
 		tmr_output_struct_normal.occ_idle_state = TRUE;
 
-		tmr_reset(tmr);
-  		tmr_base_init(tmr, timer_period, TMR_CLOCK_DIV1);
-		tmr_cnt_dir_set(tmr, TMR_COUNT_TWO_WAY_1);
+		tmr_cnt_dir_set(TMR1, TMR_COUNT_TWO_WAY_1);
+		tmr_clock_source_div_set(TMR1, TMR_CLOCK_DIV1);
+		tmr_repetition_counter_set(TMR1, 0);
+		tmr_period_buffer_enable(TMR1, FALSE);
+		tmr_base_init(TMR1, 17999, 0);
+
 		tmr_period_value_set(tmr, timer_period - 1);
 		tmr_output_channel_config(tmr, TMR_SELECT_CHANNEL_1, &tmr_output_struct_normal);
 		tmr_output_channel_config(tmr, TMR_SELECT_CHANNEL_2, &tmr_output_struct_normal);
@@ -240,8 +243,8 @@ struct at32pwmdriver_impl
 #else
 		tmr_brkdt_config_struct.brk_enable = FALSE;
 #endif
-		tmr_brkdt_config_struct.auto_output_enable = FALSE;
-		tmr_brkdt_config_struct.deadtime = 160;
+		tmr_brkdt_config_struct.auto_output_enable = TRUE;
+		tmr_brkdt_config_struct.deadtime = 150;
 		tmr_brkdt_config_struct.fcsoen_state = TRUE;
 		tmr_brkdt_config_struct.fcsodis_state = FALSE;
 		tmr_brkdt_config_struct.brk_polarity = TMR_BRK_INPUT_ACTIVE_LOW;
@@ -249,7 +252,7 @@ struct at32pwmdriver_impl
  		tmr_brkdt_config(TMR1, &tmr_brkdt_config_struct);
 
 
-		tmr_channel_buffer_enable(tmr, TRUE);
+		// tmr_channel_buffer_enable(tmr, TRUE);
 		tmr_output_channel_buffer_enable(tmr, TMR_SELECT_CHANNEL_1, TRUE);
 		tmr_output_channel_buffer_enable(tmr, TMR_SELECT_CHANNEL_2, TRUE);
 		tmr_output_channel_buffer_enable(tmr, TMR_SELECT_CHANNEL_3, TRUE);
@@ -261,6 +264,8 @@ struct at32pwmdriver_impl
 
 		tmr_channel_enable(tmr, TMR_SELECT_CHANNEL_4, TRUE);
 		tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_4, 2);//timer_period - 30);
+
+		// tmr_trgout2_enable(tmr, TRUE);
 
 		tmr_output_enable(tmr, TRUE);
 		tmr_counter_enable(tmr, TRUE);
@@ -280,6 +285,8 @@ struct at32pwmdriver_impl
 		tmr_interrupt_enable(TMR1, TMR_BRK_INT, TRUE);
 
 		set_duty(-1, -1, -1);
+
+		nvic_irq_enable(PendSV_IRQn, 2, 1);
 	}
 
 	void set_pwm_float(int channel)
@@ -338,61 +345,72 @@ struct at32pwmdriver_impl
 		uint32_t channel3_pulse = static_cast<int>(U_c * timer_period);
 		if (U_a < 0)
 		{
+	#ifndef PWM_NO_FLOAT
 			if (!(output_gpio_state & PWMA_FLOAT))
 			{
 				output_gpio_state |= PWMA_FLOAT;
 				set_pwm_float(0);
 			}
+	#endif
 
 			tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, 0);
 
 		}
 		else
 		{
+	#ifndef PWM_NO_FLOAT
 			if (output_gpio_state & PWMA_FLOAT)
 			{
 				set_pwm_cpwm(0);
 				output_gpio_state &= ~PWMA_FLOAT;
 			}
-
+	#endif
 			tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_1, channel1_pulse);
 		}
 
 		if (U_b < 0)
 		{
+	#ifndef PWM_NO_FLOAT
 			if (!(output_gpio_state & PWMB_FLOAT))
 			{
 				output_gpio_state |= PWMB_FLOAT;
 				set_pwm_float(1);
 			}
+	#endif
 			tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, 0);
 		}
 		else
 		{
+	#ifndef PWM_NO_FLOAT
 			if (output_gpio_state & PWMB_FLOAT)
 			{
 				set_pwm_cpwm(1);
 				output_gpio_state &= ~PWMB_FLOAT;
 			}
+	#endif
 			tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_2, channel2_pulse);
 		}
 
 		if (U_c < 0)
 		{
+	#ifndef PWM_NO_FLOAT
 			if (!(output_gpio_state & PWMC_FLOAT))
 			{
 				output_gpio_state |= PWMC_FLOAT;
 				set_pwm_float(2);
 			}
+	#endif
 			tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, 0);
 		}
 		else
 		{
+	#ifndef PWM_NO_FLOAT
 			if (output_gpio_state & PWMC_FLOAT)
 			{
 				set_pwm_cpwm(2);
 				output_gpio_state &= ~PWMC_FLOAT;
 			}
+	#endif
 			tmr_channel_value_set(tmr, TMR_SELECT_CHANNEL_3, channel3_pulse);
 		}
 	}
@@ -489,7 +507,7 @@ struct at32pwmdriver_impl
 		freq*=2;
 
 		auto div = crm_clocks_freq_struct.sclk_freq / freq / 65536;
-		timer_period = crm_clocks_freq_struct.sclk_freq / (div +1) / freq -1;
+		timer_period = crm_clocks_freq_struct.sclk_freq / (div +1) / freq - 2;
 		tmr_div_value_set(tmr, div);
 		tmr_period_value_set(tmr, timer_period+1);
 		// tmr->brk_bit.dtc = 100 / (div +1);
@@ -510,6 +528,7 @@ struct at32pwmdriver_impl
 
     void stop()
 	{
+		tmr_output_enable(tmr, FALSE);
 		set_duty(-1, -1, -1);
 	}
 
@@ -573,6 +592,25 @@ void at32pwmdriver::tmr1_interrupt(int perids)
 
 }
 
+static __IO bool in_isr = false;
+static __IO int missed_pwm_interrupt_ = 0;
+
+extern "C" void PendSV_Handler(void)
+{
+	__set_PRIMASK(0);
+	__enable_irq();
+	__ISB();
+
+	if (_g_instance)
+		_g_instance->tmr1_interrupt(missed_pwm_interrupt_ + 1);
+	in_isr = false;
+}
+
+static inline void trigger_pendsv(void)
+{
+	SCB->ICSR= SCB_ICSR_PENDSVSET_Msk;
+}
+
 /**
   * @brief  tmr1 interrupt handler
   * @param  none
@@ -586,21 +624,19 @@ extern "C" void TMR1_OVF_TMR10_IRQHandler(void)
 extern "C" void TMR1_CH_IRQHandler(void)
 #endif
 {
-	static std::atomic_flag in_isr {0};
-	static __IO int missed_pwm_interrupt {0};
 	static std::atomic_flag skip_odd_intrrupt{0};
+	static __IO int missed_pwm_interrupt {0};
 	if(tmr_flag_get(TMR1, TMR_OVF_FLAG) != RESET)
 	{
 		if (skip_odd_intrrupt.test_and_set())
 		{
-			if (!in_isr.test_and_set())
+			if (!in_isr)
 			{
 				int missed_pwm_interrupt_ = missed_pwm_interrupt;
 				missed_pwm_interrupt = 0;
 				tmr_flag_clear(TMR1, TMR_OVF_FLAG);
-				if (_g_instance)
-					_g_instance->tmr1_interrupt(missed_pwm_interrupt_ + 1);
-				in_isr.clear();
+				in_isr = true;
+				trigger_pendsv();
 			}
 			else
 			{
